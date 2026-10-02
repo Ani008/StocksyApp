@@ -167,6 +167,19 @@ const StockDetailPage = ({ navigation, route }) => {
         </Text>
 
         <TouchableOpacity
+          onPress={() =>
+            navigation.navigate("SupplyChain", { symbol, name })
+          }
+          style={styles.alertBtn}
+        >
+          <Ionicons
+            name="git-network-outline"
+            size={moderateScale(20)}
+            color={Colors.text}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
           onPress={() => setAlertModalVisible(true)}
           style={styles.alertBtn}
         >

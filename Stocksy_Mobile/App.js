@@ -56,6 +56,8 @@ import PortfolioPage from "./src/pages/PortfolioPage";
 import MarketPage from "./src/pages/MarketPage";
 import ProfilePage from "./src/pages/ProfilePage";
 
+import SupplyChainPage from "./src/pages/SupplyChainPage";   // ← add this
+
 import { ExchangePage, MarketsPage } from "./src/pages/PlaceholderPages";
 
 // ─── Token check ──────────────────────────────────────────────────────────────
@@ -239,6 +241,7 @@ export default function App() {
               }}
             />
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
+            <Stack.Screen name="SupplyChain" component={SupplyChainPage} />
           </Stack.Navigator>
         </NavigationContainer>
       </ToastProvider>

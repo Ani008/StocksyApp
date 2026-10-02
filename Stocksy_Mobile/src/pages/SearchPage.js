@@ -29,7 +29,7 @@ import { Colors, Typography, Shadows, fontScale, moderateScale } from "../theme"
 //   - Zero network requests for search
 //   - Works offline / before WebSocket connects
 //   - No server cost per keystroke
-const INSTRUMENTS = [
+export const INSTRUMENTS = [
   {
     key: "NSE_INDEX|Nifty 50",
     symbol: "NIFTY 50",
