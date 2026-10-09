@@ -23,14 +23,15 @@ import {
 import {
   DISMISS_DURATION_MS,
   ENABLE_IN_DEV,
+  FAILED_ATTEMPT_BACKOFF_MS,
   FALLBACK_BODY,
+  FAST_TEST_MODE,
+  FAST_TEST_POLL_MS,
   GENERIC_SERVER_MESSAGES,
   STORAGE_KEY_DISMISSED,
   STORAGE_KEY_SERVER_INFO,
   VERSION_CHECK_INTERVAL_MS,
 } from "../config/appUpdate";
-
-const FAILED_ATTEMPT_BACKOFF_MS = 5 * 60 * 1000;
 
 const AppUpdateContext = createContext({
   status: UPDATE_STATUS.NONE,
@@ -127,6 +128,14 @@ export function AppUpdateProvider({ children }) {
       if (next === "active") checkForUpdate();
     });
     return () => sub.remove();
+  }, [enabled, checkForUpdate]);
+
+  // Fast-test mode only: poll on a timer so changing the server env shows up
+  // without having to background/foreground the app. Never runs in release.
+  useEffect(() => {
+    if (!enabled || !FAST_TEST_MODE) return undefined;
+    const id = setInterval(checkForUpdate, FAST_TEST_POLL_MS);
+    return () => clearInterval(id);
   }, [enabled, checkForUpdate]);
 
   const status = useMemo(() => {
