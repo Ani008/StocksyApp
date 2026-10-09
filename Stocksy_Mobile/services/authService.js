@@ -19,6 +19,7 @@ const storeToken = async (token) => {
 
 const clearToken = async () => {
   await AsyncStorage.removeItem(TOKEN_KEY);
+  await AsyncStorage.removeItem("user");
 };
 
 // Google login/signup hit a separate backend route (/auth/google) and
@@ -92,9 +93,12 @@ export const login = async (email, password) => {
 };
 
 export const logout = async () => {
-  await clearToken();
-  const response = await api.post("/auth/logout");
-  return response.data;
+  try {
+    const response = await api.post("/auth/logout");
+    return response.data;
+  } finally {
+    await clearToken();
+  }
 };
 
 // password is only required for local (email/password) accounts — the
@@ -115,5 +119,12 @@ export const deleteAccount = async (password) => {
 // LoginPage.js  → import authService from '...'  → authService.login(...)
 // App.js        → import { getStoredToken } from '...'  → getStoredToken()
 
-const authService = { signup, login, logout, getStoredToken, deleteAccount, persistGoogleSession };
+const authService = {
+  signup,
+  login,
+  logout,
+  getStoredToken,
+  deleteAccount,
+  persistGoogleSession,
+};
 export default authService;

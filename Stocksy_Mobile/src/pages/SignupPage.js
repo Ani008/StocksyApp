@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   Alert,
   TouchableOpacity,
 } from "react-native";
-import Constants from "expo-constants";
 import Svg, { Path } from "react-native-svg";
 import Button from "../components/Button";
 import Input from "../components/Input";
@@ -19,8 +18,7 @@ import usePrivacyConsent from "../hooks/usePrivacyConsent";
 
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { API_BASE_URL, WEB_CLIENT_ID } from "../config/env";
-//import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { signInWithGoogle } from "../../services/googleAuth";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -31,20 +29,14 @@ const SignupPage = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
-  const { hasAccepted, loading: consentLoading, markAccepted } = usePrivacyConsent();
+  const {
+    hasAccepted,
+    loading: consentLoading,
+    markAccepted,
+  } = usePrivacyConsent();
   const [consentModalVisible, setConsentModalVisible] = useState(false);
-  
+
   const [pendingAction, setPendingAction] = useState(null); // 'email' | 'google'
-
-  const isExpoGo = Constants.executionEnvironment === "storeClient";
-
-  useEffect(() => {
-    if (!isExpoGo) {
-      GoogleSignin.configure({
-        webClientId: WEB_CLIENT_ID,
-      });
-    }
-  }, []);
 
   const validate = () => {
     const newErrors = {};
@@ -96,43 +88,20 @@ const SignupPage = ({ navigation }) => {
 
   const doGoogleSignup = async () => {
     try {
-      await GoogleSignin.hasPlayServices();
-
-      const userInfo = await GoogleSignin.signIn();
-
-      const idToken = userInfo?.data?.idToken;
-
-      if (!idToken) {
-        Alert.alert("Google Signup Failed", "No ID token returned by Google.");
-        return;
-      }
-
-      const res = await fetch(`${API_BASE_URL}/auth/google`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          idToken,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        Alert.alert("Google Signup Failed", data.message);
-        return;
-      }
+      const data = await signInWithGoogle();
 
       await authService.persistGoogleSession(data);
 
       navigation.replace("MainTabs");
     } catch (err) {
-      console.log(err);
-      Alert.alert("Google Signup Failed", err.message);
+      console.log("[Google Signup]", err);
+
+      Alert.alert(
+        "Google Signup Failed",
+        err?.message || "Unable to sign up with Google.",
+      );
     }
   };
-
   // Both signup paths are gated behind privacy-policy acceptance. First
   // time through, this opens the modal and stashes which action to resume;
   // after that it's a no-op passthrough straight into the real signup.
@@ -225,16 +194,14 @@ const SignupPage = ({ navigation }) => {
               <View style={styles.divider} />
             </View>
 
-            {!isExpoGo && (
-              <TouchableOpacity
-                style={styles.googleButton}
-                onPress={handleGoogleSignup}
-                activeOpacity={0.8}
-              >
-                <GoogleIcon />
-                <Text style={styles.googleButtonText}>Sign up with Google</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.googleButton}
+              onPress={handleGoogleSignup}
+              activeOpacity={0.8}
+            >
+              <GoogleIcon />
+              <Text style={styles.googleButtonText}>Sign up with Google</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Footer */}
@@ -277,12 +244,23 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: moderateScale(6),
   },
-  subtitle: { fontSize: fontScale(Typography.body), color: Colors.textSecondary },
+  subtitle: {
+    fontSize: fontScale(Typography.body),
+    color: Colors.textSecondary,
+  },
   form: { marginBottom: moderateScale(24) },
   btn: { marginTop: moderateScale(8) },
-  footer: { flexDirection: "row", justifyContent: "center", marginTop: moderateScale(16) },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: moderateScale(16),
+  },
   footerText: { fontSize: fontScale(14), color: Colors.textSecondary },
-  link: { fontSize: fontScale(14), color: Colors.primaryDark, fontWeight: "600" },
+  link: {
+    fontSize: fontScale(14),
+    color: Colors.primaryDark,
+    fontWeight: "600",
+  },
 
   dividerContainer: {
     flexDirection: "row",

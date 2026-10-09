@@ -24,6 +24,7 @@ import Button from "../components/Button";
 import StockCard from "../components/StockCard";
 import WatchlistItem from "../components/WatchlistItem";
 import MiniHoldingCard from "../components/MiniHoldingCard";
+import UpdateBanner from "../components/UpdateBanner";
 import { usePortfolio } from "../hooks/usePortfolio";
 // import Search from "./SearchPage";
 
@@ -515,6 +516,7 @@ const DashboardPage = ({ navigation }) => {
         </Card>
       </View>
 
+      <UpdateBanner style={{ marginTop: moderateScale(16) }} />
       {/* ── Index Section — LIVE DATA ────────────────────────────────────── */}
       <SectionHeader title="Index" />
 

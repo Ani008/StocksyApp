@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   text: { flex: 1, minWidth: 0, marginLeft: moderateScale(8) },
   // Suggested Style Changes
   ticker: {
-    fontSize: fontScale(10),
+    fontSize: fontScale(8),
     fontWeight: "600", // Slightly less heavy than 'bold'
     color: Colors.textSecondary, // Soft slate/gray color
     textTransform: "uppercase",
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     color: Colors.black, // True black for importance
     fontWeight: "700", // Heavy bold
   },
-  change: { fontSize: fontScale(10), fontWeight: "600", flexShrink: 0, marginLeft: moderateScale(4) },
+  change: { fontSize: fontScale(5), fontWeight: "600", flexShrink: 0, marginLeft: moderateScale(4) },
 });
 
 export default MiniHoldingCard;

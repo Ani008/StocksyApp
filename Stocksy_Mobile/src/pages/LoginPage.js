@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import Constants from "expo-constants";
 import {
   View,
   Text,
@@ -17,8 +16,7 @@ import Input from "../components/Input";
 import authService from "../../services/authService";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { API_BASE_URL, WEB_CLIENT_ID } from "../config/env";
-//import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { signInWithGoogle } from "../../services/googleAuth";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -28,16 +26,6 @@ const LoginPage = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-
-  const isExpoGo = Constants.executionEnvironment === "storeClient";
-
-  useEffect(() => {
-    if (!isExpoGo) {
-      GoogleSignin.configure({
-        webClientId: WEB_CLIENT_ID,
-      });
-    }
-  }, []);
 
   const validate = () => {
     const newErrors = {};
@@ -92,42 +80,18 @@ const LoginPage = ({ navigation }) => {
 
   const handleGoogleLogin = async () => {
     try {
-      await GoogleSignin.hasPlayServices();
-
-      const userInfo = await GoogleSignin.signIn();
-
-      console.log(JSON.stringify(userInfo, null, 2));
-
-      const idToken = userInfo?.data?.idToken;
-
-      if (!idToken) {
-        Alert.alert("Google Login Failed", "No ID token returned by Google.");
-        return;
-      }
-
-      const res = await fetch(`${API_BASE_URL}/auth/google`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          idToken,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        Alert.alert("Google Login Failed", data.message);
-        return;
-      }
+      const data = await signInWithGoogle();
 
       await authService.persistGoogleSession(data);
 
       navigation.replace("MainTabs");
     } catch (err) {
-      console.log(err);
-      Alert.alert("Google Login Failed", err.message);
+      console.log("[Google Login]", err);
+
+      Alert.alert(
+        "Google Login Failed",
+        err?.message || "Unable to sign in with Google.",
+      );
     }
   };
 
@@ -188,7 +152,7 @@ const LoginPage = ({ navigation }) => {
               <View style={styles.divider} />
             </View>
 
-            {!isExpoGo && (
+            
               <TouchableOpacity
                 style={styles.googleButton}
                 onPress={handleGoogleLogin}
@@ -200,7 +164,7 @@ const LoginPage = ({ navigation }) => {
                   Continue with Google
                 </Text>
               </TouchableOpacity>
-            )}
+            
           </View>
 
           {/* Footer */}
@@ -237,12 +201,23 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: moderateScale(6),
   },
-  subtitle: { fontSize: fontScale(Typography.body), color: Colors.textSecondary },
+  subtitle: {
+    fontSize: fontScale(Typography.body),
+    color: Colors.textSecondary,
+  },
   form: { marginBottom: moderateScale(24) },
   btn: { marginTop: moderateScale(8) },
-  footer: { flexDirection: "row", justifyContent: "center", marginTop: moderateScale(16) },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: moderateScale(16),
+  },
   footerText: { fontSize: fontScale(14), color: Colors.textSecondary },
-  link: { fontSize: fontScale(14), color: Colors.primaryDark, fontWeight: "600" },
+  link: {
+    fontSize: fontScale(14),
+    color: Colors.primaryDark,
+    fontWeight: "600",
+  },
 
   // Forgot Password
   forgotBtn: {

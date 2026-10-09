@@ -8,9 +8,11 @@ import {
   Alert,
   Share,
   Linking,
+  Platform,
 } from "react-native";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { resetToLogin } from "../../services/navigation";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   SafeAreaView,
@@ -56,17 +58,54 @@ const ProfilePage = ({ navigation }) => {
     }
   };
 
+  const performLogout = async () => {
+    try {
+      console.log("🔥 LOGOUT STARTED");
+
+      await AsyncStorage.removeItem("token");
+      await AsyncStorage.removeItem("user");
+
+      console.log("✅ AsyncStorage cleared");
+
+      resetToLogin();
+
+      console.log("✅ LOGOUT COMPLETE");
+    } catch (error) {
+      console.error("❌ LOGOUT ERROR:", error);
+    }
+  };
+
   const handleLogout = () => {
+    console.log("🔥 LOGOUT BUTTON PRESSED");
+
+    // ─────────────────────────────────────────────
+    // WEB / PWA
+    // ─────────────────────────────────────────────
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Are you sure you want to logout?");
+
+      console.log("Web logout confirmation:", confirmed);
+
+      if (confirmed) {
+        performLogout();
+      }
+
+      return;
+    }
+
+    // ─────────────────────────────────────────────
+    // ANDROID / iOS
+    // Keep native Alert behavior unchanged.
+    // ─────────────────────────────────────────────
     Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
       {
         text: "Logout",
         style: "destructive",
-        onPress: async () => {
-          await AsyncStorage.removeItem("token");
-          await AsyncStorage.removeItem("user");
-          navigation.replace("Login");
-        },
+        onPress: performLogout,
       },
     ]);
   };
@@ -454,7 +493,10 @@ const ProfilePage = ({ navigation }) => {
           {/* Logout */}
           <TouchableOpacity
             style={styles.logoutCard}
-            onPress={handleLogout}
+            onPress={() => {
+              console.log("🚨 TOUCHABLE LOGOUT CLICKED");
+              handleLogout();
+            }}
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons

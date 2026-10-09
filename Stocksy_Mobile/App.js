@@ -7,6 +7,7 @@ import {
   TextInput,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
+import { navigationRef } from "./services/navigation";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
@@ -31,6 +32,12 @@ import {
 } from "react-native-safe-area-context";
 import { ToastProvider } from "./src/context/ToastProvider";
 import SessionExpiredScreen from "./src/components/SessionExpiredScreen";
+import ForceUpdateScreen from "./src/components/ForceUpdateScreen";
+import {
+  AppUpdateProvider,
+  useAppUpdate,
+} from "./src/context/AppUpdateProvider";
+import { UPDATE_STATUS } from "./src/utils/appUpdate";
 import SplashVideoScreen from "./src/components/SplashVideoScreen";
 import { registerSessionExpiredHandler } from "./services/uiBridge";
 
@@ -55,8 +62,6 @@ import DashboardPage from "./src/pages/DashboardPage";
 import PortfolioPage from "./src/pages/PortfolioPage";
 import MarketPage from "./src/pages/MarketPage";
 import ProfilePage from "./src/pages/ProfilePage";
-
-import SupplyChainPage from "./src/pages/SupplyChainPage";   // ← add this
 
 import { ExchangePage, MarketsPage } from "./src/pages/PlaceholderPages";
 
@@ -139,7 +144,7 @@ function MainTabs() {
 // ─────────────────────────────────────────────────────────────────────────────
 const Stack = createNativeStackNavigator();
 
-export default function App() {
+function AppContent() {
   // Video splash plays first, on every cold launch, regardless of auth
   // state — this is intentionally checked before isAuthenticated so it
   // shows even for already-logged-in users, not just first-time/logged-out
@@ -205,7 +210,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ToastProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <StatusBar style="auto" />
           <Stack.Navigator
             initialRouteName={isAuthenticated ? "MainTabs" : "Login"}
@@ -241,11 +246,29 @@ export default function App() {
               }}
             />
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
-            <Stack.Screen name="SupplyChain" component={SupplyChainPage} />
           </Stack.Navigator>
         </NavigationContainer>
       </ToastProvider>
     </SafeAreaProvider>
+  );
+}
+
+
+function UpdateGate({ children }) {
+  const { status } = useAppUpdate();
+  if (status === UPDATE_STATUS.MANDATORY) {
+    return <ForceUpdateScreen />;
+  }
+  return children;
+}
+
+export default function App() {
+  return (
+    <AppUpdateProvider>
+      <UpdateGate>
+        <AppContent />
+      </UpdateGate>
+    </AppUpdateProvider>
   );
 }
 
