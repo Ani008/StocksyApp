@@ -42,17 +42,22 @@ const AppUpdateContext = createContext({
 });
 
 export function AppUpdateProvider({ children }) {
-  const enabled = Platform.OS === "android" && (!__DEV__ || ENABLE_IN_DEV);
+  // The update check is Android-only (the Play Store build number is what we
+  // compare). In fast-test mode (dev + EXPO_PUBLIC_ENABLE_UPDATE_CHECK_IN_DEV)
+  // it also runs on iOS so the banner UI can be tested in Expo Go on an iPhone.
+  // __DEV__ is false in release builds, so iOS users are never affected.
+  const isSupportedPlatform = Platform.OS === "android" || FAST_TEST_MODE;
+  const enabled = isSupportedPlatform && (!__DEV__ || ENABLE_IN_DEV);
 
   const currentBuild = useMemo(() => {
-    if (Platform.OS !== "android") return null;
+    if (!isSupportedPlatform) return null;
     // Dev-only override so the update UI can be tested in Expo Go.
     // __DEV__ is false in release builds, so this can never affect users.
     const fake = __DEV__
       ? parseBuildNumber(process.env.EXPO_PUBLIC_FAKE_BUILD_NUMBER)
       : null;
     return fake ?? parseBuildNumber(Application.nativeBuildVersion);
-  }, []);
+  }, [isSupportedPlatform]);
 
   const [info, setInfo] = useState(null);
   const [dismissed, setDismissed] = useState(null);
