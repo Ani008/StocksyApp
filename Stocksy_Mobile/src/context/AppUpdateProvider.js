@@ -11,7 +11,6 @@ import { AppState, Platform } from "react-native";
 import * as Application from "expo-application";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { API_BASE_URL } from "../config/env";
 import { fetchAppVersionInfo } from "../../services/appVersionService";
 import { openPlayStore } from "../utils/openPlayStore";
 import {
@@ -42,14 +41,14 @@ const AppUpdateContext = createContext({
   openStore: async () => false,
 });
 
-const log = (...args) => console.log("[appUpdate]", ...args);
-
 export function AppUpdateProvider({ children }) {
-  // The update check is Android-only (the Play Store build number is what we
-  // compare). In fast-test mode (dev + EXPO_PUBLIC_ENABLE_UPDATE_CHECK_IN_DEV)
-  // it also runs on iOS so the banner UI can be tested in Expo Go on an iPhone.
-  // __DEV__ is false in release builds, so iOS users are never affected.
-  const isSupportedPlatform = Platform.OS === "android" || FAST_TEST_MODE;
+  // The update check compares the installed Android build number with the Play
+  // Store one, so it only runs on Android. Web/PWA never runs it, in any mode.
+  // In fast-test mode (dev + EXPO_PUBLIC_ENABLE_UPDATE_CHECK_IN_DEV=true) it also
+  // runs on iOS so the banner can be tried in Expo Go on an iPhone. __DEV__ is
+  // false in release builds, so shipped iOS/web apps are never affected.
+  const isSupportedPlatform =
+    Platform.OS === "android" || (FAST_TEST_MODE && Platform.OS === "ios");
   const enabled = isSupportedPlatform && (!__DEV__ || ENABLE_IN_DEV);
 
   const currentBuild = useMemo(() => {
@@ -62,33 +61,6 @@ export function AppUpdateProvider({ children }) {
     return fake ?? parseBuildNumber(Application.nativeBuildVersion);
   }, [isSupportedPlatform]);
 
-  // Step 1: what does this build think its configuration is?
-  useEffect(() => {
-    log("1/5 config", {
-      platform: Platform.OS,
-      __DEV__,
-      ENABLE_IN_DEV,
-      FAST_TEST_MODE,
-      enabled,
-      currentBuild,
-      fakeBuildEnv: process.env.EXPO_PUBLIC_FAKE_BUILD_NUMBER,
-      nativeBuildVersion: Application.nativeBuildVersion,
-      intervalMs: VERSION_CHECK_INTERVAL_MS,
-      apiBase: API_BASE_URL,
-    });
-    if (!enabled) {
-      log(
-        "DISABLED. Update check will NOT run. Reasons:",
-        !isSupportedPlatform ? "platform not supported (need android, or fast-test mode on iOS)" : "",
-        __DEV__ && !ENABLE_IN_DEV ? "EXPO_PUBLIC_ENABLE_UPDATE_CHECK_IN_DEV is not 'true' in this bundle (check .env + npx expo start -c)" : "",
-      );
-    }
-    if (enabled && currentBuild === null) {
-      log("WARNING: currentBuild is null, so no banner can ever show. Set EXPO_PUBLIC_FAKE_BUILD_NUMBER.");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const [info, setInfo] = useState(null);
   const [dismissed, setDismissed] = useState(null);
 
@@ -97,33 +69,16 @@ export function AppUpdateProvider({ children }) {
   const inFlightRef = useRef(false);
 
   const checkForUpdate = useCallback(async () => {
-    if (!enabled) return;
-    if (inFlightRef.current) {
-      log("2/5 check skipped: request already in flight");
-      return;
-    }
+    if (!enabled || inFlightRef.current) return;
     const now = Date.now();
-    if (now - lastSuccessRef.current < VERSION_CHECK_INTERVAL_MS) {
-      log(
-        `2/5 check skipped: last success ${Math.round((now - lastSuccessRef.current) / 1000)}s ago, interval is ${VERSION_CHECK_INTERVAL_MS / 1000}s`,
-      );
-      return;
-    }
-    if (now - lastAttemptRef.current < FAILED_ATTEMPT_BACKOFF_MS) {
-      log("2/5 check skipped: backing off after a failed attempt");
-      return;
-    }
-    log("2/5 checking server for latest version...");
+    if (now - lastSuccessRef.current < VERSION_CHECK_INTERVAL_MS) return;
+    if (now - lastAttemptRef.current < FAILED_ATTEMPT_BACKOFF_MS) return;
 
     inFlightRef.current = true;
     lastAttemptRef.current = now;
     try {
       const result = await fetchAppVersionInfo();
-      if (!result) {
-        log("3/5 no usable version info (see the [appUpdate] fetch lines above)");
-        return;
-      }
-      log("3/5 server says:", result);
+      if (!result) return;
       lastSuccessRef.current = Date.now();
       lastAttemptRef.current = 0;
       setInfo(result);
@@ -210,25 +165,6 @@ export function AppUpdateProvider({ children }) {
       ),
     [status, dismissed, info],
   );
-
-  // Step 4/5: the final verdict, logged whenever any input changes.
-  useEffect(() => {
-    if (!enabled) return;
-    log("4/5 verdict:", {
-      currentBuild,
-      latest: info?.latestVersionCode ?? null,
-      minimum: info?.minimumVersionCode ?? null,
-      status,
-      dismissedRecord: dismissed,
-      showBanner,
-    });
-    if (info && status === UPDATE_STATUS.NONE) {
-      log("   -> no update: currentBuild is >= latest. Lower EXPO_PUBLIC_FAKE_BUILD_NUMBER or raise LATEST_ANDROID_VERSION.");
-    }
-    if (status === UPDATE_STATUS.OPTIONAL && !showBanner) {
-      log("   -> update available but banner hidden: you tapped 'Later' for this version within 24h. Bump LATEST_ANDROID_VERSION or clear app data.");
-    }
-  }, [enabled, currentBuild, info, status, dismissed, showBanner]);
 
   const dismiss = useCallback(() => {
     if (!info) return;

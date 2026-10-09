@@ -7,34 +7,20 @@ import { parseVersionPayload } from "../src/utils/appUpdate";
 // red error toast on failure, which is wrong for a silent background check.
 // Resolves to { latestVersionCode, minimumVersionCode, message } or null. Never throws.
 export async function fetchAppVersionInfo() {
-  if (!API_BASE_URL) {
-    console.log("[appUpdate] fetch: API_BASE_URL is empty (EXPO_PUBLIC_API_BASE_URL not set in this bundle)");
-    return null;
-  }
-  const url = `${API_BASE_URL}/app/version`;
+  if (!API_BASE_URL) return null;
   try {
-    console.log("[appUpdate] fetch: GET", url);
-    const res = await axios.get(url, {
+    const res = await axios.get(`${API_BASE_URL}/app/version`, {
       timeout: VERSION_REQUEST_TIMEOUT_MS,
       headers: {
         Accept: "application/json",
-        // The server sends Cache-Control: max-age=60, and the phone's network
-        // stack would otherwise serve the old answer for up to a minute.
+        // The server sends Cache-Control: max-age=60. In fast-test mode, ask for
+        // a fresh copy so a changed version shows up immediately.
         ...(FAST_TEST_MODE ? { "Cache-Control": "no-cache" } : {}),
       },
     });
-    console.log("[appUpdate] fetch: HTTP", res.status, "body:", JSON.stringify(res.data));
-    const parsed = parseVersionPayload(res.data);
-    if (!parsed) {
-      console.log("[appUpdate] fetch: body did not match { android: { latestVersionCode, minimumVersionCode }, message }");
-    }
-    return parsed;
+    return parseVersionPayload(res.data);
   } catch (e) {
-    console.log(
-      "[appUpdate] fetch FAILED:",
-      e?.message,
-      e?.response ? `HTTP ${e.response.status} ${JSON.stringify(e.response.data)}` : "(no response: server unreachable from the phone, or wrong IP/port)",
-    );
+    console.log("[appUpdate] version check skipped:", e?.message);
     return null;
   }
 }
