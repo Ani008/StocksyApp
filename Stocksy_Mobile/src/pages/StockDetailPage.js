@@ -15,7 +15,6 @@ import {
 } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { BarChart } from "react-native-gifted-charts";
-import { WebView } from "react-native-webview";
 
 import useMarketData from "../hooks/useMarketData";
 import useHistoricalData from "../hooks/useHistoricalData";
