@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  Platform,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { navigationRef } from "./services/navigation";
@@ -39,6 +40,9 @@ import {
 } from "./src/context/AppUpdateProvider";
 import { UPDATE_STATUS } from "./src/utils/appUpdate";
 import SplashVideoScreen from "./src/components/SplashVideoScreen";
+import SplashStaticScreen from "./src/components/SplashStaticScreen";
+import PwaUpdateBar from "./src/components/PwaUpdateBar";
+import { PwaProvider } from "./src/context/PwaProvider";
 import { registerSessionExpiredHandler } from "./services/uiBridge";
 
 // ─── Auth screens ─────────────────────────────────────────────────────────────
@@ -144,12 +148,29 @@ function MainTabs() {
 // ─────────────────────────────────────────────────────────────────────────────
 const Stack = createNativeStackNavigator();
 
+const IS_WEB = Platform.OS === "web";
+
+// Web only: shortest time the static splash stays up, so it doesn't just
+// flicker when the token check finishes almost instantly.
+const WEB_SPLASH_MIN_MS = 600;
+
 function AppContent() {
   // Video splash plays first, on every cold launch, regardless of auth
   // state — this is intentionally checked before isAuthenticated so it
   // shows even for already-logged-in users, not just first-time/logged-out
   // ones.
-  const [showSplashVideo, setShowSplashVideo] = useState(true);
+  //
+  // Not on web: iOS Safari blocks/restricts autoplay video and a 4s splash
+  // on every PWA launch is annoying, so web gets a static splash instead
+  // (see SplashStaticScreen below).
+  const [showSplashVideo, setShowSplashVideo] = useState(!IS_WEB);
+  const [webSplashElapsed, setWebSplashElapsed] = useState(!IS_WEB);
+
+  useEffect(() => {
+    if (!IS_WEB) return undefined;
+    const id = setTimeout(() => setWebSplashElapsed(true), WEB_SPLASH_MIN_MS);
+    return () => clearTimeout(id);
+  }, []);
 
   // null = still checking, true = has token, false = no token
   const [isAuthenticated, setIsAuthenticated] = useState(null);
@@ -189,6 +210,12 @@ function AppContent() {
   }
 
   // ── Splash / loading state ──────────────────────────────────────────────────
+  // Web: static splash until the token check is done (and the minimum
+  // display time has passed).
+  if (IS_WEB && (isAuthenticated === null || !webSplashElapsed)) {
+    return <SplashStaticScreen />;
+  }
+
   // Shown for the fraction of a second while SecureStore is read.
   // Prevents a flash of the Login screen for already-logged-in users.
   if (isAuthenticated === null) {
@@ -264,15 +291,25 @@ function UpdateGate({ children }) {
 
 export default function App() {
   return (
-    <AppUpdateProvider>
-      <UpdateGate>
-        <AppContent />
-      </UpdateGate>
-    </AppUpdateProvider>
+    <PwaProvider>
+      {/* PwaUpdateBar renders nothing on native and when no web update is
+          waiting, so the app layout is unchanged in those cases. */}
+      <View style={styles.root}>
+        <PwaUpdateBar />
+        <AppUpdateProvider>
+          <UpdateGate>
+            <AppContent />
+          </UpdateGate>
+        </AppUpdateProvider>
+      </View>
+    </PwaProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   splash: {
     flex: 1,
     justifyContent: "center",
