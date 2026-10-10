@@ -1,27 +1,25 @@
-/* Stocksy service worker
+
+/*
+ * Stocksy service worker.
  *
- * Purpose: make the app installable and let the app SHELL (HTML + JS bundle +
- * fonts + icons) open without a network connection.
+ * Combines offline app-shell caching with build-ID-based update prompts.
  *
- * What this deliberately does NOT do:
- *   - It never touches cross-origin requests. Your API (api.stocksy.online),
- *     Google OAuth, and anything else off-origin go straight to the network.
- *   - It never caches or replays non-GET requests (orders, login, etc.).
- *   - It never caches API data. For a trading app a stale price or balance is
- *     worse than an error, so offline data caching is a separate, explicit
- *     decision for later.
- *   - WebSockets are not visible to service workers at all.
+ * Safety:
+ * - Only same-origin GET requests are handled.
+ * - API/auth paths and cross-origin requests are never cached.
+ * - Non-GET requests (orders, login, etc.) are never intercepted.
+ * - No API data is cached.
+ * - New workers wait for user approval before activation.
  *
- * Bump VERSION to force every client to drop old caches on the next update.
+ * BUILD_ID is replaced at build time by scripts/stamp-sw.mjs.
  */
 
-const VERSION = "v1";
+const BUILD_ID = "__BUILD_ID__";
+const VERSION =
+  BUILD_ID && BUILD_ID !== "__BUILD_ID__" ? BUILD_ID : "dev";
+
 const SHELL_CACHE = `stocksy-shell-${VERSION}`;
 const RUNTIME_CACHE = `stocksy-runtime-${VERSION}`;
-
-// Fixed cache key for the SPA shell. Every navigation returns the same
-// index.html, so one entry is enough (and avoids caching per-URL OAuth
-// redirects like /oauth?code=...).
 const SHELL_KEY = "/index.html";
 
 const PRECACHE_URLS = [
@@ -36,145 +34,171 @@ const PRECACHE_URLS = [
   "/icons/favicon-32.png",
 ];
 
-// If the network is slower than this AND we have a cached shell, open the
-// cached shell instead of leaving the user on a blank screen.
 const NAVIGATION_TIMEOUT_MS = 3000;
-
-// Max entries kept in the runtime cache (old hashed bundles pile up across
-// deploys otherwise).
 const RUNTIME_MAX_ENTRIES = 80;
 
-// ─── Install: precache static files + the current shell and its bundles ──────
+// Install: cache the offline files, app shell and referenced JS/CSS.
+// Do not call skipWaiting() automatically.
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(SHELL_CACHE);
-      await cache.addAll(PRECACHE_URLS);
 
-      // Fetch the shell and cache every same-origin script/style it
-      // references. Expo emits content-hashed bundle names, so they can't be
-      // hard-coded here; reading them out of index.html means the very first
-      // offline launch works without having to visit every screen online.
+      // Cache available static files without failing installation
+      // if an optional file is missing.
+      await Promise.all(
+        PRECACHE_URLS.map(async (url) => {
+          try {
+            const response = await fetch(url, { cache: "reload" });
+            if (response.ok) {
+              await cache.put(url, response);
+            }
+          } catch (_) {
+            // Best effort.
+          }
+        })
+      );
+
       try {
-        const res = await fetch("/", { cache: "reload" });
-        if (res.ok && isHtml(res)) {
-          const html = await res.clone().text();
-          await cache.put(SHELL_KEY, res);
+        const response = await fetch("/", { cache: "reload" });
+
+        if (response.ok && isHtml(response)) {
+          const html = await response.clone().text();
+
+          await cache.put(SHELL_KEY, response);
+
           await Promise.all(
             extractAssetUrls(html).map(async (url) => {
               try {
-                const r = await fetch(url, { cache: "reload" });
-                if (r.ok) await cache.put(url, r);
+                const assetResponse = await fetch(url, {
+                  cache: "reload",
+                });
+
+                if (assetResponse.ok) {
+                  await cache.put(url, assetResponse);
+                }
               } catch (_) {
-                /* best-effort; runtime caching will pick it up later */
+                // Best effort; runtime caching may pick it up later.
               }
-            }),
+            })
           );
         }
       } catch (_) {
-        /* shell fetch is best-effort; install must not fail on it */
+        // The shell fetch is best effort.
       }
-    })(),
+    })()
   );
 });
 
-// ─── Activate: drop caches from older versions, take control of open pages ───
+// Activate: remove older Stocksy caches and control open pages.
+// This runs when the new worker is allowed to activate.
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keep = new Set([SHELL_CACHE, RUNTIME_CACHE]);
       const names = await caches.keys();
+
       await Promise.all(
         names
-          .filter((n) => n.startsWith("stocksy-") && !keep.has(n))
-          .map((n) => caches.delete(n)),
+          .filter(
+            (name) =>
+              name.startsWith("stocksy-") && !keep.has(name)
+          )
+          .map((name) => caches.delete(name))
       );
+
       await self.clients.claim();
-    })(),
+    })()
   );
 });
 
-// A waiting worker only takes over when the page asks (see pwa-register.js).
-// Swapping code under a running trading screen without the user knowing is
-// how you get half-old, half-new JS.
+// Update prompt integration.
+// The page can request BUILD_ID and explicitly approve an update.
 self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
+  const data = event.data;
+  if (!data) return;
+
+  if (data.type === "SKIP_WAITING") {
     self.skipWaiting();
+  } else if (
+    data.type === "GET_BUILD_ID" &&
+    event.ports &&
+    event.ports[0]
+  ) {
+    event.ports[0].postMessage(BUILD_ID);
   }
 });
 
-// ─── Fetch routing ───────────────────────────────────────────────────────────
+// Fetch routing.
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
+  const request = event.request;
 
-  if (req.method !== "GET") return;
+  if (request.method !== "GET") return;
 
-  const url = new URL(req.url);
+  const url = new URL(request.url);
 
-  // Cross-origin (API, Google OAuth, CDNs): never intercept.
+  // Never intercept cross-origin requests.
   if (url.origin !== self.location.origin) return;
 
-  // Safari fetches <video> with Range requests, which a plain cache.match
-  // can't answer correctly. Let the network handle them.
-  if (req.headers.has("range")) return;
+  // Let the network handle media Range requests.
+  if (request.headers.has("range")) return;
 
-  // Same-origin API/auth paths (in case the API is ever proxied under this
-  // origin): always network, never cached.
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth")) {
+  // Never cache same-origin API or authentication routes.
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/auth")
+  ) {
     return;
   }
 
-  if (req.mode === "navigate") {
-    event.respondWith(handleNavigation(req));
+  if (request.mode === "navigate") {
+    event.respondWith(handleNavigation(request));
     return;
   }
 
-  // Content-hashed, immutable build output.
+  // Content-hashed Expo bundles.
   if (url.pathname.startsWith("/_expo/static/")) {
-    event.respondWith(cacheFirst(req));
+    event.respondWith(cacheFirst(request));
     return;
   }
 
-  // Fonts/images bundled by Expo, plus our static PWA files.
+  // Static assets and PWA support files.
   if (
     url.pathname.startsWith("/assets/") ||
     url.pathname.startsWith("/icons/") ||
     PRECACHE_URLS.includes(url.pathname) ||
     url.pathname === "/pwa-register.js"
   ) {
-    event.respondWith(staleWhileRevalidate(event, req));
-    return;
+    event.respondWith(staleWhileRevalidate(event, request));
   }
-
-  // Anything else (including dev-server bundles) falls through to the network.
 });
 
-// ─── Strategies ──────────────────────────────────────────────────────────────
-
-async function handleNavigation(req) {
+// Navigation: try network, but use the cached shell if offline
+// or if the network takes too long.
+async function handleNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
   const cachedShell = await cache.match(SHELL_KEY);
 
-  const network = fetch(req).then((res) => {
-    // Keep the shell fresh for the next offline launch. Only store real HTML
-    // responses (not a host's 404 page).
-    if (res.ok && isHtml(res)) {
-      cache.put(SHELL_KEY, res.clone());
+  const network = fetch(request).then((response) => {
+    if (response.ok && isHtml(response)) {
+      cache.put(SHELL_KEY, response.clone());
     }
-    return res;
+
+    return response;
   });
 
   try {
     if (!cachedShell) return await network;
 
-    // Network-first, but don't hang on a flaky connection when we have a
-    // perfectly good shell to open.
-    const timeout = new Promise((resolve) =>
-      setTimeout(() => resolve(cachedShell), NAVIGATION_TIMEOUT_MS),
-    );
+    const timeout = new Promise((resolve) => {
+      setTimeout(
+        () => resolve(cachedShell),
+        NAVIGATION_TIMEOUT_MS
+      );
+    });
+
     return await Promise.race([network, timeout]);
   } catch (_) {
-    // Offline.
     return (
       cachedShell ||
       (await cache.match("/offline.html")) ||
@@ -183,68 +207,97 @@ async function handleNavigation(req) {
   }
 }
 
-async function cacheFirst(req) {
-  const hit = await caches.match(req);
-  if (hit) return hit;
+// Cache-first strategy for hashed bundles.
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
 
-  const res = await fetch(req);
-  await putRuntime(req, res);
-  return res;
+  const response = await fetch(request);
+  await putRuntime(request, response);
+
+  return response;
 }
 
-async function staleWhileRevalidate(event, req) {
-  const hit = await caches.match(req);
+// Stale-while-revalidate strategy for static assets.
+async function staleWhileRevalidate(event, request) {
+  const cached = await caches.match(request);
 
-  const refresh = fetch(req)
-    .then(async (res) => {
-      await putRuntime(req, res);
-      return res;
+  const refresh = fetch(request)
+    .then(async (response) => {
+      await putRuntime(request, response);
+      return response;
     })
     .catch(() => null);
 
-  if (hit) {
+  if (cached) {
     event.waitUntil(refresh);
-    return hit;
+    return cached;
   }
 
   return (await refresh) || Response.error();
 }
 
-async function putRuntime(req, res) {
-  if (!res || !res.ok || res.type !== "basic") return;
+// Store successful same-origin responses with a bounded cache size.
+async function putRuntime(request, response) {
+  if (
+    !response ||
+    !response.ok ||
+    response.type !== "basic"
+  ) {
+    return;
+  }
 
-  const cc = res.headers.get("cache-control") || "";
-  if (/no-store/i.test(cc)) return;
+  const cacheControl =
+    response.headers.get("cache-control") || "";
+
+  if (/no-store/i.test(cacheControl)) return;
 
   const cache = await caches.open(RUNTIME_CACHE);
-  await cache.put(req, res.clone());
+  await cache.put(request, response.clone());
 
   const keys = await cache.keys();
+
   if (keys.length > RUNTIME_MAX_ENTRIES) {
     await Promise.all(
-      keys.slice(0, keys.length - RUNTIME_MAX_ENTRIES).map((k) => cache.delete(k)),
+      keys
+        .slice(0, keys.length - RUNTIME_MAX_ENTRIES)
+        .map((key) => cache.delete(key))
     );
   }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function isHtml(res) {
-  return (res.headers.get("content-type") || "").includes("text/html");
+function isHtml(response) {
+  return (
+    response.headers.get("content-type") || ""
+  ).includes("text/html");
 }
 
-// Pull same-origin script/stylesheet URLs out of the shell HTML.
+// Extract same-origin JavaScript and CSS assets from index.html.
 function extractAssetUrls(html) {
   const found = new Set();
-  const re = /<(?:script|link)\b[^>]*?\b(?:src|href)=["']([^"']+)["'][^>]*>/gi;
-  let m;
-  while ((m = re.exec(html))) {
-    const raw = m[1];
-    if (!raw.startsWith("/") || raw.startsWith("//")) continue;
+
+  const regex =
+    /<(?:script|link)\b[^>]*?\b(?:src|href)=["']([^"']+)["'][^>]*>/gi;
+
+  let match;
+
+  while ((match = regex.exec(html))) {
+    const raw = match[1];
+
+    if (!raw.startsWith("/") || raw.startsWith("//")) {
+      continue;
+    }
+
     const path = raw.split("?")[0].split("#")[0];
-    if (PRECACHE_URLS.includes(path)) continue;
-    if (path === "/") continue;
-    if (/\.(?:js|css)$/i.test(path)) found.add(raw);
+
+    if (PRECACHE_URLS.includes(path) || path === "/") {
+      continue;
+    }
+
+    if (/\.(?:js|css)$/i.test(path)) {
+      found.add(raw);
+    }
   }
+
   return [...found];
 }

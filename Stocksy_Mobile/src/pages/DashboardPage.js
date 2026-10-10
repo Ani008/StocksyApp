@@ -25,6 +25,7 @@ import StockCard from "../components/StockCard";
 import WatchlistItem from "../components/WatchlistItem";
 import MiniHoldingCard from "../components/MiniHoldingCard";
 import UpdateBanner from "../components/UpdateBanner";
+import InstallPrompt from "../components/InstallPrompt";
 import { usePortfolio } from "../hooks/usePortfolio";
 // import Search from "./SearchPage";
 
@@ -517,6 +518,8 @@ const DashboardPage = ({ navigation }) => {
       </View>
 
       <UpdateBanner style={{ marginTop: moderateScale(16) }} />
+      {/* Web only: "Install Stocksy" card (renders nothing on native / once installed) */}
+      <InstallPrompt style={{ marginTop: moderateScale(16) }} />
       {/* ── Index Section — LIVE DATA ────────────────────────────────────── */}
       <SectionHeader title="Index" />
 
