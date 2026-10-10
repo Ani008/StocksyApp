@@ -19,7 +19,16 @@
       }
     },
     "web": {
-      "favicon": "./assets/StocksyLogoBlue.jpeg"
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/StocksyLogoBlue.jpeg",
+      "name": "Stocksy",
+      "shortName": "Stocksy",
+      "description": "Paper trading and live market data for the Indian stock market (NSE).",
+      "lang": "en",
+      "themeColor": "#365EE0",
+      "backgroundColor": "#0B0F19",
+      "display": "standalone"
     },
     "plugins": [
       "expo-asset",

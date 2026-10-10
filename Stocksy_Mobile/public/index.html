@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+
+    <!--
+      viewport-fit=cover is REQUIRED for iOS standalone mode: without it
+      env(safe-area-inset-*) is always 0, so react-native-safe-area-context
+      reports no insets and the bottom tab bar sits under the home indicator.
+      Pinch-zoom is intentionally left enabled (accessibility).
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
+    />
+
+    <title>%WEB_TITLE%</title>
+
+    <!-- theme-color and description are injected from app.json -> expo.web -->
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Icons -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+
+    <!-- iOS "Add to Home Screen" behaviour -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Stocksy" />
+    <!-- "default" keeps content below the status bar; switch to
+         "black-translucent" later only if the UI is made edge-to-edge. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+
+    <style id="pwa-base">
+      html {
+        /* Matches the in-app splash so there is no white flash on launch. */
+        background-color: #0b0f19;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        /* Stops the rubber-band / pull-to-refresh from yanking a trading
+           screen around when the PWA is running standalone. */
+        overscroll-behavior: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+      #boot {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0b0f19;
+      }
+      #boot img {
+        width: 96px;
+        height: 96px;
+        border-radius: 22px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run Stocksy.
+    </noscript>
+    <!-- The root element for your Expo app. The static logo below is shown
+         while the JS bundle loads and is replaced when React mounts. -->
+    <div id="root">
+      <div id="boot"><img src="/icons/icon-192.png" alt="Stocksy" /></div>
+    </div>
+
+    <!-- External (not inline) so a strict Content-Security-Policy can be
+         applied later without 'unsafe-inline' for scripts. -->
+    <script src="/pwa-register.js" defer></script>
+  </body>
+</html>
