@@ -1,215 +1,42 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { WS_URL } from "../config/env";
-import { getStoredToken } from "../../services/authService";
-import { showToast } from "../../services/uiBridge";
-
-// ── CONFIG — change this to your machine's LAN IP ────────────────────────────
-// Find it with: ifconfig | grep "inet " (Mac/Linux) or ipconfig (Windows)
-// Must be your local network IP, e.g. 192.168.1.42
-// NEVER use 'localhost' or '127.0.0.1' on a physical device
-
-// const WS_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
-
-const RECONNECT_DELAY_MS = 3000;
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import marketSocket from "../../services/marketSocket";
 
 /**
+ * Live prices + per-user order pushes.
+ *
+ * This used to open its OWN WebSocket per screen. It is now a thin view onto
+ * ONE shared, lifecycle-aware socket (services/marketSocketCore.js), so:
+ *   - the server sees one connection per user (it only remembers one, so
+ *     per-screen sockets used to steal each other's order notifications),
+ *   - reconnect / background / offline / stale-socket handling lives in one
+ *     place instead of being repeated in every screen.
+ * The returned shape and the callback contract are unchanged.
+ *
  * @param {(msg: object) => void} [onOrderEvent] — called for any per-user
- *   order push (ORDER_FILLED, ORDER_REJECTED, RMS_SQUARE_OFF), in addition
- *   to the toast already shown. This is what lets a screen holding live
- *   position/portfolio data (usePortfolio) actually refetch the moment a
- *   fill lands, instead of only refreshing on next screen focus — which
- *   can easily happen before the async fill (place → queue → worker) has
- *   actually landed, leaving a just-covered position looking stuck open.
+ *   order push (ORDER_FILLED, ORDER_REJECTED, RMS_SQUARE_OFF) and also with
+ *   { type: "RESYNC" } after a connection gap (reconnect, or resuming after
+ *   the app was in the background for a while). Pushes sent while disconnected
+ *   are gone for good, so screens holding positions/wallet data should
+ *   refetch on ANY call — which the existing callbacks (`() => refresh()`)
+ *   already do. The toast for real order events is shown once, centrally.
  */
 export default function useMarketData(onOrderEvent) {
-  const [prices, setPrices] = useState({});
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState(null);
+  const { prices, isConnected, error } = useSyncExternalStore(
+    marketSocket.subscribe,
+    marketSocket.getSnapshot,
+    marketSocket.getSnapshot,
+  );
 
-  // Refs so cleanup functions always have access to latest values
-  const wsRef = useRef(null);
-  const reconnectTimerRef = useRef(null);
-  const isMountedRef = useRef(true);
-
-  // Ref so `connect` (memoized with []) always calls the LATEST callback
-  // without needing to be in its dep array — putting onOrderEvent there
-  // directly would tear down and reopen the socket on every render where
-  // the caller passes a fresh inline function.
+  // Latest callback without re-attaching (an inline arrow changes every render).
   const onOrderEventRef = useRef(onOrderEvent);
   useEffect(() => {
     onOrderEventRef.current = onOrderEvent;
   }, [onOrderEvent]);
 
-  const connect = useCallback(async () => {
-    // Don't reconnect if already open
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
-
-    // Clean up any existing socket before creating new one
-    if (wsRef.current) {
-      wsRef.current.onopen = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onclose = null;
-      wsRef.current.close();
-    }
-
-    try {
-      // Attach the JWT so the backend can associate this connection with
-      // a userId (see services/websocketService.js) — that's what lets
-      // per-user pushes like ORDER_FILLED, ORDER_REJECTED, and RMS
-      // square-off alerts actually reach this device. The live-price
-      // feed itself still works without a token (e.g. if not logged in
-      // yet); this only unlocks the notification channel on top of it.
-      let token = null;
-      try {
-        token = await getStoredToken();
-      } catch {
-        // Not logged in / storage unavailable — connect anyway, just
-        // without per-user notifications.
-      }
-
-      if (!isMountedRef.current) return;
-
-      const url = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL;
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (!isMountedRef.current) return;
-        console.log('[useMarketData] Connected to Stocksy WebSocket');
-        setIsConnected(true);
-        setError(null);
-        // Clear any pending reconnect timer
-        if (reconnectTimerRef.current) {
-          clearTimeout(reconnectTimerRef.current);
-          reconnectTimerRef.current = null;
-        }
-      };
-
-      ws.onmessage = (event) => {
-        if (!isMountedRef.current) return;
-        try {
-          const msg = JSON.parse(event.data);
-
-          if (msg.error) {
-            setError(msg.error);
-            return;
-          }
-
-          if (msg.type === 'MARKET_DATA' && msg.data) {
-            // ── THE KEY FIX: spread into NEW object so React detects the change
-            // Do NOT do: setPrices(prev => { prev[k] = ...; return prev })
-            // That mutates the same reference → React skips the re-render
-            setPrices(prev => {
-              const updated = { ...prev };
-              for (const [instrumentKey, feedData] of Object.entries(msg.data)) {
-                // Flatten ltpc for easy access: prices["NSE_INDEX|Nifty 50"].ltp
-                const ltpc = feedData.ltpc || {};
-                updated[instrumentKey] = {
-                  ltp: parseFloat(ltpc.ltp) || 0,
-                  cp: parseFloat(ltpc.cp) || 0,
-                  ltt: ltpc.ltt || null,
-                  symbol: feedData.symbol || instrumentKey,
-                  name: feedData.name || instrumentKey,
-                  sector: feedData.sector || 'Equity',
-                  isLive: feedData.isLive  ?? false,  // ← new
-                  lastUpdated: feedData.lastUpdated  ?? null,     // ← new
-                  _ts: msg.timestamp, // include timestamp so even same-price ticks trigger re-render
-                };
-              }
-              return updated;
-            });
-            setError(null);
-            return;
-          }
-
-          // ── Per-user pushes (services/websocketService.js notifyClient) ──
-          // These previously had nowhere to go — the socket wasn't
-          // registered by userId, so notifyClient() was silently a
-          // no-op. Now that it's wired up, surface them as toasts.
-          if (msg.type === 'ORDER_FILLED') {
-            showToast(
-              `${msg.side} ${msg.quantity} ${msg.symbol} filled @ ₹${msg.fillPrice?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-              'success',
-            );
-            // Position/wallet state on the server just changed — let any
-            // listener (usePortfolio's refresh) refetch instead of leaving
-            // whatever was on screen before this fill landed.
-            onOrderEventRef.current?.(msg);
-            return;
-          }
-
-          if (msg.type === 'ORDER_REJECTED') {
-            showToast(`Order rejected — ${msg.reason || 'unknown reason'}`, 'error');
-            onOrderEventRef.current?.(msg);
-            return;
-          }
-
-          if (msg.type === 'RMS_SQUARE_OFF') {
-            showToast(
-              `${msg.symbol} auto-squared off — loss reached ${Math.round((msg.lossRatio || 0) * 100)}% of margin`,
-              'warning',
-            );
-            // This is also a position change (RMS force-covers/closes) —
-            // same reasoning as ORDER_FILLED above.
-            onOrderEventRef.current?.(msg);
-            return;
-          }
-        } catch (parseErr) {
-          console.warn('[useMarketData] Failed to parse message:', parseErr);
-        }
-      };
-
-      ws.onerror = (err) => {
-        if (!isMountedRef.current) return;
-        console.warn('[useMarketData] WebSocket error:', err.message || err);
-        setError('Connection error');
-        setIsConnected(false);
-      };
-
-      ws.onclose = (event) => {
-        if (!isMountedRef.current) return;
-        console.log(`[useMarketData] Disconnected (code ${event.code}). Reconnecting in ${RECONNECT_DELAY_MS}ms...`);
-        setIsConnected(false);
-        // Schedule reconnect
-        reconnectTimerRef.current = setTimeout(() => {
-          if (isMountedRef.current) connect();
-        }, RECONNECT_DELAY_MS);
-      };
-    } catch (err) {
-      console.error('[useMarketData] Failed to create WebSocket:', err);
-      setError('Failed to connect');
-      // Retry after delay
-      reconnectTimerRef.current = setTimeout(() => {
-        if (isMountedRef.current) connect();
-      }, RECONNECT_DELAY_MS);
-    }
-  }, []);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    connect();
-
-    return () => {
-      // Full cleanup on unmount — prevents memory leaks and ghost sockets
-      isMountedRef.current = false;
-
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-
-      if (wsRef.current) {
-        // Remove handlers before closing so onclose doesn't trigger reconnect
-        wsRef.current.onopen = null;
-        wsRef.current.onmessage = null;
-        wsRef.current.onerror = null;
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-    };
-  }, [connect]);
+  useEffect(
+    () => marketSocket.attach((msg) => onOrderEventRef.current?.(msg)),
+    [],
+  );
 
   return { prices, isConnected, error };
 }

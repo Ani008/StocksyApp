@@ -1,5 +1,6 @@
 import api from "./api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import marketSocket from "./marketSocket";
 
 const TOKEN_KEY = "token";
 
@@ -13,13 +14,18 @@ export const getStoredToken = async () => {
   }
 };
 
+// The shared market socket registers itself with the server as whoever was
+// logged in when it connected. Tell it whenever that changes so order
+// notifications can never go to the previous user's session.
 const storeToken = async (token) => {
   await AsyncStorage.setItem(TOKEN_KEY, token);
+  marketSocket.resetIdentity();
 };
 
 const clearToken = async () => {
   await AsyncStorage.removeItem(TOKEN_KEY);
   await AsyncStorage.removeItem("user");
+  marketSocket.resetIdentity();
 };
 
 // Google login/signup hit a separate backend route (/auth/google) and
