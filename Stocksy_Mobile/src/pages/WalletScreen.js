@@ -8,11 +8,11 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
-  Modal,
   TextInput,
   Animated,
   StatusBar,
 } from "react-native";
+import Modal from "../components/AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import Button from "../components/Button";

@@ -8,11 +8,11 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
-  Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import Modal from "./AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { placeOrder, cancelOrder, fetchOrders } from "../../services/orderService";
 
