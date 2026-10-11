@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
 } from "react-native";
+import Modal from "./AppModal";
 import { Ionicons } from "@expo/vector-icons";
 
 import Input from "./Input";

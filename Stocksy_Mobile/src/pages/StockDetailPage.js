@@ -6,9 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Modal,
   StatusBar,
 } from "react-native";
+import Modal from "../components/AppModal";
 import {
   SafeAreaView,
   useSafeAreaInsets,

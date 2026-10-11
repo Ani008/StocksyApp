@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Linking } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Linking } from "react-native";
+import Modal from "./AppModal";
 import { Ionicons } from "@expo/vector-icons";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
