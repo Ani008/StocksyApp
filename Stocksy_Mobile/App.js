@@ -31,6 +31,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { ToastProvider } from "./src/context/ToastProvider";
+import ConnectionBanner from "./src/components/ConnectionBanner";
 import SessionExpiredScreen from "./src/components/SessionExpiredScreen";
 import ForceUpdateScreen from "./src/components/ForceUpdateScreen";
 import {
@@ -248,6 +249,7 @@ function AppContent() {
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
           </Stack.Navigator>
         </NavigationContainer>
+        <ConnectionBanner />
       </ToastProvider>
     </SafeAreaProvider>
   );
