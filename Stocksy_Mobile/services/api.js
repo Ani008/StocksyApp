@@ -3,7 +3,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {API_BASE_URL, API_TIMEOUT} from "../src/config/env";
 import { showToast, triggerSessionExpired } from './uiBridge';
 
-console.log('[api.js] API_BASE_URL:', API_BASE_URL);
+// SECURITY: request/response logging is dev-only. In a production web build
+// (__DEV__ === false) nothing is printed, so request URLs, server responses
+// and error payloads never show up in the browser console of real users.
+const debugLog = (...args) => {
+  if (__DEV__) console.log(...args);
+};
+
+debugLog('[api.js] API_BASE_URL:', API_BASE_URL);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -20,17 +27,17 @@ api.interceptors.request.use(
       const token = await AsyncStorage.getItem('token');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log(`[API ➡️ ] ${config.method?.toUpperCase()} ${config.baseURL}${config.url} — token attached ✅`);
+        debugLog(`[API ➡️ ] ${config.method?.toUpperCase()} ${config.baseURL}${config.url} — token attached ✅`);
       } else {
-        console.log(`[API ➡️ ] ${config.method?.toUpperCase()} ${config.baseURL}${config.url} — no token`);
+        debugLog(`[API ➡️ ] ${config.method?.toUpperCase()} ${config.baseURL}${config.url} — no token`);
       }
     } catch (e) {
-      console.log('[API ➡️ ] Could not read token from AsyncStorage:', e.message);
+      debugLog('[API ➡️ ] Could not read token from AsyncStorage:', e.message);
     }
     return config;
   },
   (error) => {
-    console.log('[API ➡️ ] Request setup error:', error.message);
+    debugLog('[API ➡️ ] Request setup error:', error.message);
     return Promise.reject(error);
   }
 );
@@ -38,13 +45,13 @@ api.interceptors.request.use(
 // ─── Response interceptor ─────────────────────────────────────────────────────
 api.interceptors.response.use(
   (response) => {
-    console.log(`[API ✅] ${response.status} ${response.config.url}`);
+    debugLog(`[API ✅] ${response.status} ${response.config.url}`);
     return response;
   },
   (error) => {
     if (error.response) {
-      console.log(`[API ❌] ${error.response.status} ${error.config?.url}`);
-      console.log('[API ❌] Response data:', JSON.stringify(error.response.data));
+      debugLog(`[API ❌] ${error.response.status} ${error.config?.url}`);
+      debugLog('[API ❌] Response data:', JSON.stringify(error.response.data));
 
       const { message, code, severity } = error.response.data || {};
 
@@ -67,11 +74,11 @@ api.interceptors.response.use(
         );
       }
     } else if (error.request) {
-      console.log('[API 🔴] No response received — check IP/server');
-      console.log('[API 🔴] URL attempted:', error.config?.baseURL + error.config?.url);
+      debugLog('[API 🔴] No response received — check IP/server');
+      debugLog('[API 🔴] URL attempted:', error.config?.baseURL + error.config?.url);
       showToast('No connection to the server. Check your network.', 'error');
     } else {
-      console.log('[API 🔴] Axios config error:', error.message);
+      debugLog('[API 🔴] Axios config error:', error.message);
       showToast('Something went wrong. Please try again.', 'error');
     }
     return Promise.reject(error);

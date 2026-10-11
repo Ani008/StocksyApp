@@ -48,6 +48,7 @@ REDIS_HOST=
 REDIS_PORT=
 REDIS_PASSWORD=
 UPSTOX_ACCESS_TOKEN=     
+INTERNAL_API_KEY=        # must be IDENTICAL to Stocksy_Server's INTERNAL_API_KEY
 ```
 
 ### `STOCKSY_SERVER/.env`
@@ -58,7 +59,18 @@ REDIS_PORT=
 REDIS_PASSWORD=
 MONGO_URI=               
 JWT_SECRET=              
+INTERNAL_API_KEY=        # shared secret for backend_py -> POST /api/fundamentals (24+ chars)
+ADMIN_USER_IDS=          # comma-separated user ids allowed to see /api/revenue/*
 ```
+
+> **`INTERNAL_API_KEY`** — the fundamentals scheduler (`backend_py/fundamentals.py`) sends
+> this in an `X-Internal-Key` header. If it is missing or shorter than 24 characters the
+> server rejects every `POST /api/fundamentals` (fails closed). Generate one with:
+> `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+>
+> **`ADMIN_USER_IDS`** — the revenue endpoints are admin only. Use the `id` (UUID) of your
+> account from the `users` table, not your email. If this is empty, nobody can access
+> `/api/revenue/*`.
 
 ### `STOCKSY_MOBILE/.env`
 ```env

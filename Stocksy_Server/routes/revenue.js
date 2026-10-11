@@ -3,19 +3,17 @@
  * Platform revenue endpoints — mount in server.js:
  *   app.use('/api/revenue', require('./routes/revenue'));
  *
- * TODO before shipping this beyond your own testing: `protect` only checks
- * that *someone* is logged in — it doesn't check *who*. This data is
- * platform-wide (every user's trades), so any logged-in user can currently
- * see total company revenue. The app has no role/admin concept yet
- * (see migrations/001_create_users.sql — no `role` column), so either
- * add one and swap `protect` for an `adminOnly` middleware here, or for
- * now just check `req.user.id` against your own user id inside each
- * handler before this goes anywhere near production.
+ * This data is platform-wide (every user's trades), so these routes are
+ * ADMIN ONLY: `protect` checks that someone is logged in, and `adminOnly`
+ * then checks that their user id is listed in the ADMIN_USER_IDS env var
+ * (comma-separated). If that variable is empty or unset, nobody can access
+ * these routes — the routes fail closed.
  */
 
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
+const { adminOnly } = require('../middleware/adminOnly');
 const {
   getSummary,
   getMonthly,
@@ -29,10 +27,10 @@ const {
 // GET /api/revenue/daily      — day-by-day trend
 // GET /api/revenue/by-symbol  — which stocks earn the most brokerage
 // GET /api/revenue/ledger     — raw paginated ledger
-router.get('/summary',    protect, getSummary);
-router.get('/monthly',    protect, getMonthly);
-router.get('/daily',      protect, getDaily);
-router.get('/by-symbol',  protect, getBySymbol);
-router.get('/ledger',     protect, getLedger);
+router.get('/summary',    protect, adminOnly, getSummary);
+router.get('/monthly',    protect, adminOnly, getMonthly);
+router.get('/daily',      protect, adminOnly, getDaily);
+router.get('/by-symbol',  protect, adminOnly, getBySymbol);
+router.get('/ledger',     protect, adminOnly, getLedger);
 
 module.exports = router;

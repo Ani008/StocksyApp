@@ -5,12 +5,29 @@ const ingestFundamentals = async (req, res) => {
   try {
     const snapshot = req.body;
 
+    // Reject anything that isn't the expected { stocks: { SYMBOL: {...} } }
+    // shape — previously a bad body threw inside the handler (500) AFTER
+    // it had already been written to Redis, replacing good data with junk.
+    const stocks = snapshot && snapshot.stocks;
+    if (
+      !stocks ||
+      typeof stocks !== "object" ||
+      Array.isArray(stocks) ||
+      Object.keys(stocks).length === 0
+    ) {
+      return res.status(400).json({
+        message: "Invalid fundamentals snapshot.",
+        code: "VALIDATION_ERROR",
+        severity: "error",
+      });
+    }
+
     await redis.set("fundamentals:ALL", JSON.stringify(snapshot));
 
-    console.log(`✅ Cached ${Object.keys(snapshot.stocks).length} stocks`);
+    console.log(`✅ Cached ${Object.keys(stocks).length} stocks`);
     res.json({
       success: true,
-      stocks: Object.keys(snapshot.stocks).length,
+      stocks: Object.keys(stocks).length,
     });
   } catch (error) {
     logger.error(`[INGEST FUNDAMENTALS] ${error.message}`);

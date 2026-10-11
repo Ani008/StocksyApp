@@ -249,10 +249,26 @@ def get_optimal_fundamentals(symbol_list):
         
 
     # 4. Batch Send to Node.js
+    # The Node endpoint only accepts this call with the shared secret.
+    # Set the SAME INTERNAL_API_KEY in backend_py/.env and Stocksy_Server/.env.
+    internal_key = os.getenv("INTERNAL_API_KEY", "")
+    if not internal_key:
+        print("🚨 INTERNAL_API_KEY is not set in backend_py/.env — the Node backend will reject this sync.")
+
     try:
-        response = session.post(NODE_BACKEND_URL, json=snapshot, timeout=10)
+        response = session.post(
+            NODE_BACKEND_URL,
+            json=snapshot,
+            headers={"X-Internal-Key": internal_key},
+            timeout=10,
+        )
         if response.status_code == 200:
             print("🚀 Successfully synced with Node backend.")
+        elif response.status_code in (401, 503):
+            print(
+                f"🚨 Backend refused the sync ({response.status_code}). "
+                "Check that INTERNAL_API_KEY matches in backend_py/.env and Stocksy_Server/.env."
+            )
         else:
             print(f"⚠️ Backend returned error: {response.status_code}")
     except Exception as e:

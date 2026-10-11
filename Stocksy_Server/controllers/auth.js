@@ -10,20 +10,22 @@ const generateToken = (id) => {
 
 const signupUser = async (req, res) => {
   console.log("\n───────────────────────────────────────");
+  // SECURITY: never log req.body here — it contains the plaintext password.
+  // Log only which fields are missing, never their values.
   console.log("[SIGNUP] Request received");
-  console.log("[SIGNUP] Body:", JSON.stringify(req.body, null, 2));
-  // readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
 
   const { fullName, email, password } = req.body;
 
   if (!fullName || !email || !password) {
     console.log(
-      "[SIGNUP] ❌ Missing fields — fullName:",
-      fullName,
-      "| email:",
-      email,
-      "| password:",
-      !!password,
+      "[SIGNUP] ❌ Missing fields:",
+      [
+        !fullName && "fullName",
+        !email && "email",
+        !password && "password",
+      ]
+        .filter(Boolean)
+        .join(", "),
     );
     return res
       .status(400)
@@ -92,8 +94,9 @@ RETURNING *
       token: generateToken(user.id),
     });
   } catch (error) {
-    console.log("[SIGNUP] ❌ Error:", error.message);
-    console.log("[SIGNUP] Full error:", error);
+    // message only — the full pg error object includes row values
+    // (e.g. the email in a "duplicate key" detail).
+    console.error("[SIGNUP] ❌ Error:", error.message);
     res.status(500).json({
       message: "Something went wrong. Please try again.",
       code: "UNKNOWN_ERROR",
@@ -104,17 +107,15 @@ RETURNING *
 
 const loginUser = async (req, res) => {
   console.log("\n───────────────────────────────────────");
+  // SECURITY: never log req.body here — it contains the plaintext password.
   console.log("[LOGIN] Request received");
-  console.log("[LOGIN] Body:", JSON.stringify(req.body, null, 2));
 
   const { email, password } = req.body;
 
   if (!email || !password) {
     console.log(
-      "[LOGIN] ❌ Missing fields — email:",
-      email,
-      "| password:",
-      !!password,
+      "[LOGIN] ❌ Missing fields:",
+      [!email && "email", !password && "password"].filter(Boolean).join(", "),
     );
     return res.status(400).json({
       message: "email and password are required",
@@ -124,7 +125,6 @@ const loginUser = async (req, res) => {
   }
 
   try {
-    console.log("[LOGIN] Looking up user by email:", email);
     const result = await pool.query(
       `
 SELECT *
@@ -177,8 +177,7 @@ WHERE email=$1
       });
     }
   } catch (error) {
-    console.log("[LOGIN] ❌ Error:", error.message);
-    console.log("[LOGIN] Full error:", error);
+    console.error("[LOGIN] ❌ Error:", error.message);
     res.status(500).json({
       message: "Something went wrong. Please try again.",
       code: "UNKNOWN_ERROR",

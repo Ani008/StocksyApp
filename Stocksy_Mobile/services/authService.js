@@ -81,7 +81,6 @@ export const login = async (email, password) => {
   const response = await api.post("/auth/login", { email, password });
 
   await storeToken(response.data.token);
-  console.log("LOGIN RESPONSE:", response.data);
 
   await AsyncStorage.setItem(
     "user",
@@ -92,8 +91,6 @@ export const login = async (email, password) => {
       email: response.data.email,
     }),
   );
-  const test = await AsyncStorage.getItem("user");
-  console.log("STORED USER:", test);
 
   return response.data;
 };

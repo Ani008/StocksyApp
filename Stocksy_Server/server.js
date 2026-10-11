@@ -40,15 +40,16 @@ app.use(express.json({ limit: "5mb" }));
 // their own tighter limiter on top of this one.
 app.use(generalLimiter);
 
-// 🔍 DEBUG: Log every incoming request so you can see if the server is even
+// 🔍 DEBUG: one line per request so you can see if the server is even
 //    receiving calls from the app. If you hit signup and see nothing here,
 //    the problem is 100% the API_BASE_URL in your .env / api.js.
+//
+// SECURITY: log the method and path ONLY. This used to print every request's
+// full headers (including the Authorization bearer token) and body
+// (passwords, Google auth codes, OTPs) — never log those. req.path is used
+// instead of req.url so query strings are left out too.
 app.use((req, res, next) => {
-  console.log(`\n📨 [${new Date().toISOString()}] ${req.method} ${req.url}`);
-  console.log("   Headers:", JSON.stringify(req.headers, null, 2));
-  if (Object.keys(req.body || {}).length) {
-    console.log("   Body:", JSON.stringify(req.body, null, 2));
-  }
+  console.log(`📨 [${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
 
@@ -87,8 +88,10 @@ app.use("/api/historical", require("./routes/historical"));
 app.use("/api/fundamentals", require("./routes/fundamentals"));
 app.use("/api/leverage", require("./routes/leverage"));
 app.use("/api/market", require("./routes/market"));
-app.use("/api/debug", require("./routes/debug"));
-app.use("/api/revenue", require("./routes/revenue"));
+// (The old /api/debug/square-off route was removed: it let anyone trigger the
+//  square-off job for every user. Test squareOffService from a script or the
+//  Node REPL instead.)
+app.use("/api/revenue", require("./routes/revenue")); // admin only — see routes/revenue.js
 app.use("/api", require("./routes/orders"));
 app.use("/api/journal", require("./routes/journal"));
 app.use("/api/alerts", require("./routes/alerts"));

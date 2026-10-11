@@ -64,9 +64,7 @@ const LoginPage = ({ navigation }) => {
     setLoading(true);
 
     try {
-      const user = await authService.login(email, password);
-
-      console.log("Login Success:", user);
+      await authService.login(email, password);
 
       navigation.replace("MainTabs");
     } catch (err) {
