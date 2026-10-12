@@ -16,6 +16,7 @@ import { useFocusEffect } from "@react-navigation/native";
 
 import alertService from "../../services/alertService";
 import { showToast } from "../../services/uiBridge";
+import PushOptInCard from "../components/PushOptInCard";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const formatPrice = (price) =>
@@ -174,6 +175,7 @@ const AlertsPage = ({ navigation }) => {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={Colors.gain} />
         }
+        ListHeaderComponent={<PushOptInCard />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <View style={styles.emptyIconRing}>

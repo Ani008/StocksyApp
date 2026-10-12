@@ -1,6 +1,7 @@
 import api from "./api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import marketSocket from "./marketSocket";
+import { disablePush, syncExistingSubscription } from "../src/pwa/push";
 
 const TOKEN_KEY = "token";
 
@@ -20,6 +21,9 @@ export const getStoredToken = async () => {
 const storeToken = async (token) => {
   await AsyncStorage.setItem(TOKEN_KEY, token);
   marketSocket.resetIdentity();
+  // Web push: if this browser already has a subscription, hand it to whoever
+  // just signed in (no-op on native and when notifications are off).
+  syncExistingSubscription();
 };
 
 const clearToken = async () => {
@@ -97,6 +101,9 @@ export const login = async (email, password) => {
 
 export const logout = async () => {
   try {
+    // While the token is still valid: stop pushing this person's alerts to
+    // this browser. Web only, best effort, never blocks logging out.
+    await disablePush().catch(() => {});
     const response = await api.post("/auth/logout");
     return response.data;
   } finally {

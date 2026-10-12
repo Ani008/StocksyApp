@@ -28,6 +28,7 @@ const { calculateCharges } = require("../utils/feeCalculator");
 const { notifyClient } = require("./websocketService");
 const { getLeverage } = require("../config/leverage");
 
+const { notifyUser } = require("./webPushService");
 const logger = require("../utils/logger");
 
 // Trade Journal feature — indicator snapshot capture + post-fill journal
@@ -1042,6 +1043,18 @@ async function executeOrder(jobData) {
       walletBalance: parseFloat(walletAfter.balance),
       ts: Date.now(),
     });
+
+    // Web push only for RESTING orders (limit / stop-loss) that filled while the
+    // person may not be looking. A market order fills in the same second the
+    // user taps Buy, and GTT orders already send their own push.
+    if (orderType !== "MARKET") {
+      notifyUser(userId, {
+        title: `${side === "BUY" ? "Bought" : "Sold"} ${qty} ${symbol}`,
+        body: `Your ${orderType === "SL" ? "stop-loss" : "limit"} order filled at ₹${parseFloat(fillPrice.toFixed(2))}`,
+        url: "/?open=orders",
+        tag: `order-${orderId}`,
+      });
+    }
 
     logger.info(
       `Order FILLED: ${orderId} ${side} ${qty} ${symbol} @ ₹${fillPrice}`,

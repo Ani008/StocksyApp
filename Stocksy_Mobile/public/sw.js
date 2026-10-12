@@ -129,6 +129,99 @@ self.addEventListener("message", (event) => {
   }
 });
 
+// ── Web push ────────────────────────────────────────────────────────────────
+// Payload (JSON, from the server's webPushService): { title, body, url, tag }.
+// Browsers (iOS especially) revoke a site's push permission if a push arrives
+// and no notification is shown, so a notification is ALWAYS shown, even when
+// the payload is missing or malformed.
+function safePushUrl(raw) {
+  // Only same-origin paths. Anything else falls back to the app root so a
+  // crafted payload can never send the user to another site.
+  if (typeof raw === "string" && raw.startsWith("/") && !raw.startsWith("//")) {
+    return raw;
+  }
+  return "/";
+}
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {
+    data = {};
+  }
+
+  const title =
+    typeof data.title === "string" && data.title ? data.title : "Stocksy";
+  const options = {
+    body: typeof data.body === "string" ? data.body : "",
+    icon: "/icons/icon-192.png",
+    data: { url: safePushUrl(data.url) },
+  };
+
+  if (typeof data.tag === "string" && data.tag) {
+    options.tag = data.tag;
+    options.renotify = true;
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = safePushUrl(
+    event.notification.data && event.notification.data.url
+  );
+
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+
+      for (const client of windows) {
+        if (new URL(client.url).origin !== self.location.origin) continue;
+        try {
+          await client.focus();
+          client.postMessage({ type: "NOTIFICATION_CLICK", url });
+          return;
+        } catch (_) {
+          // Could not focus this one; try the next, then open a new window.
+        }
+      }
+
+      await self.clients.openWindow(url);
+    })()
+  );
+});
+
+// The browser rotated the push subscription. Re-subscribe with the same key
+// and tell open pages; the app re-registers the new endpoint with the server
+// (the worker has no access to the login token).
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const key =
+          event.oldSubscription &&
+          event.oldSubscription.options &&
+          event.oldSubscription.options.applicationServerKey;
+        if (key) {
+          await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: key,
+          });
+        }
+      } catch (_) {
+        // The app will offer to turn notifications on again.
+      }
+      const windows = await self.clients.matchAll({ type: "window" });
+      windows.forEach((c) => c.postMessage({ type: "PUSH_SUBSCRIPTION_CHANGED" }));
+    })()
+  );
+});
+
 // Fetch routing.
 self.addEventListener("fetch", (event) => {
   const request = event.request;

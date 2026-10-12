@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   ActivityIndicator,
@@ -45,6 +45,8 @@ import SplashStaticScreen from "./src/components/SplashStaticScreen";
 import PwaUpdateBar from "./src/components/PwaUpdateBar";
 import { PwaProvider } from "./src/context/PwaProvider";
 import { registerSessionExpiredHandler } from "./services/uiBridge";
+import { listenForNotificationClicks } from "./src/pwa/push";
+import { parseOpenTarget } from "./src/utils/push";
 
 // ─── Auth screens ─────────────────────────────────────────────────────────────
 import LoginPage from "./src/pages/LoginPage";
@@ -177,6 +179,32 @@ function AppContent() {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [sessionExpired, setSessionExpired] = useState(false);
 
+  // Web push: tapping a notification opens the app at /?open=alerts (cold
+  // start) or sends a message to the already-open page. Both end up here.
+  // A target is only acted on once the person is signed in and navigation is
+  // ready; otherwise it is kept until then.
+  const pendingTarget = useRef(
+    IS_WEB && typeof window !== "undefined" ? parseOpenTarget(window.location.search) : null,
+  );
+  const authedRef = useRef(false);
+  authedRef.current = isAuthenticated === true && !sessionExpired;
+
+  const openPendingTarget = useCallback(() => {
+    const target = pendingTarget.current;
+    if (!target || !authedRef.current || !navigationRef.isReady()) return;
+    pendingTarget.current = null;
+    navigationRef.navigate(target);
+    if (IS_WEB) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
+  useEffect(() => {
+    if (!IS_WEB) return undefined;
+    return listenForNotificationClicks((target) => {
+      pendingTarget.current = target;
+      openPendingTarget();
+    });
+  }, [openPendingTarget]);
+
   useEffect(() => {
     // Runs in parallel with the splash video (not after it) — by the
     // time the ~4s video finishes, this has almost always already
@@ -238,7 +266,7 @@ function AppContent() {
   return (
     <SafeAreaProvider>
       <ToastProvider>
-        <NavigationContainer ref={navigationRef}>
+        <NavigationContainer ref={navigationRef} onReady={openPendingTarget}>
           <StatusBar style="auto" />
           <Stack.Navigator
             initialRouteName={isAuthenticated ? "MainTabs" : "Login"}

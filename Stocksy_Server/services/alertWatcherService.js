@@ -35,6 +35,7 @@ const {
 const sendAlertTriggeredEmail = require("../utils/sendAlertTriggeredEmail");
 const sendAlertExecutedEmail = require("../utils/sendAlertExecutedEmail");
 const sendAlertFailedEmail = require("../utils/sendAlertFailedEmail");
+const { notifyUser } = require("./webPushService");
 const logger = require("../utils/logger");
 
 const ALERT_WATCH_CRON = process.env.ALERT_WATCH_CRON || "* * * * *"; // every minute
@@ -63,6 +64,13 @@ async function handleNotify(alert, ltp) {
     targetPrice: alert.target_price,
     triggeredPrice: ltp,
     direction: alert.direction,
+  });
+
+  notifyUser(alert.user_id, {
+    title: `${alert.symbol} hit your target`,
+    body: `${alert.symbol} is ${alert.direction === "ABOVE" ? "up to" : "down to"} ₹${ltp} (target ₹${Number(alert.target_price)})`,
+    url: "/?open=alerts",
+    tag: `alert-${alert.id}`,
   });
 
   logger.info(`[ALERTS] Notified ${alert.id} (${alert.symbol}) @ ${ltp}`);
@@ -104,6 +112,13 @@ async function handleGtt(alert, ltp) {
       orderId: order.id,
     });
 
+    notifyUser(alert.user_id, {
+      title: `${alert.action === "BUY" ? "Bought" : "Sold"} ${alert.quantity} ${alert.symbol}`,
+      body: `Your GTT order was placed at ₹${order.price ?? ltp}`,
+      url: "/?open=alerts",
+      tag: `alert-${alert.id}`,
+    });
+
     logger.info(`[ALERTS] GTT executed ${alert.id} (${alert.symbol}) ${alert.action} @ ${ltp}`);
   } catch (err) {
     const updated = await markFailed({
@@ -121,6 +136,13 @@ async function handleGtt(alert, ltp) {
       quantity: alert.quantity,
       targetPrice: alert.target_price,
       reason: err.message,
+    });
+
+    notifyUser(alert.user_id, {
+      title: `GTT order for ${alert.symbol} failed`,
+      body: "Open Stocksy to see why.",
+      url: "/?open=alerts",
+      tag: `alert-${alert.id}`,
     });
 
     logger.warn(`[ALERTS] GTT failed ${alert.id} (${alert.symbol}): ${err.message}`);
