@@ -98,4 +98,15 @@ const orderLimiter = rateLimit({
   store: makeRedisStore('rl:order:'),
 });
 
-module.exports = { generalLimiter, authLimiter, otpLimiter, orderLimiter };
+// ── Session limiter (refresh / ws-ticket) ───────────────────────────────────
+// Refresh happens roughly every 15 min per open tab and a ticket is fetched on
+// every WebSocket (re)connect, so this is looser than authLimiter but still
+// stops a script from hammering the token endpoints.
+const sessionLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  store: makeRedisStore('rl:session:'),
+});
+
+module.exports = { generalLimiter, authLimiter, otpLimiter, orderLimiter, sessionLimiter };

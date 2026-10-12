@@ -81,7 +81,12 @@ function setEnv(vars) {
   };
 }
 
-const bearer = (id) => ({ Authorization: `Bearer ${jwt.sign({ id }, process.env.JWT_SECRET)}` });
+// Since step 2 an access token must carry a session id that is still alive.
+const sessions = require('../services/sessionService');
+sessions.setStore({
+  findActiveSessionUser: async (_sid, userId) => ({ id: userId, full_name: 'T', username: 't', email: 't@x.com', provider: 'local' }),
+});
+const bearer = (id) => ({ Authorization: `Bearer ${jwt.sign({ id, sid: 'test-session' }, process.env.JWT_SECRET)}` });
 const validSnapshot = { stocks: { TCS: { pe: 30 }, INFY: { pe: 25 } } };
 const post = (base, body, headers = {}) =>
   fetch(`${base}/api/fundamentals`, {

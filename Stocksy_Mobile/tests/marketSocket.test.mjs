@@ -47,6 +47,7 @@ function makeEnv({ token = "tok1", online = true, state = "active", config } = {
   const sock = createMarketSocket({
     url: "wss://x.test",
     getToken: async () => tokenValue,
+    getTicket: async () => (tokenValue ? `ticket-for-${tokenValue}` : null),
     WebSocketImpl: FakeWS,
     appState: {
       current: () => appStateNow,
@@ -104,7 +105,7 @@ test("does not connect until a screen attaches, then connects once with the toke
   env.sock.attach();
   await flush();
   assert.equal(env.count(), 1);
-  assert.equal(env.ws().url, "wss://x.test?token=tok1");
+  assert.equal(env.ws().url, "wss://x.test?ticket=ticket-for-tok1");
 });
 
 test("several screens share ONE socket", async () => {
@@ -447,13 +448,13 @@ test("resetIdentity() reconnects with the new user's token (never the old one)",
   env.sock.attach();
   await flush();
   env.ws().serverOpen();
-  assert.match(env.ws().url, /token=alice$/);
+  assert.match(env.ws().url, /ticket=ticket-for-alice$/);
 
   env.setToken("bob");
   env.sock.resetIdentity();
   await flush();
   assert.equal(env.count(), 2);
-  assert.match(env.ws().url, /token=bob$/);
+  assert.match(env.ws().url, /ticket=ticket-for-bob$/);
   assert.equal(FakeWS.instances[0].readyState, 3, "alice's socket is closed");
 });
 
@@ -479,7 +480,7 @@ test("logout then quick login by someone else (inside the idle grace) does not r
   env.sock.attach(); // new MainTabs mounts
   await flush();
   assert.equal(env.count(), 2);
-  assert.match(env.ws().url, /token=bob$/);
+  assert.match(env.ws().url, /ticket=ticket-for-bob$/);
 });
 
 test("late events from a replaced socket are ignored", async () => {

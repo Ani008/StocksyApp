@@ -1,53 +1,86 @@
-import api from "./api";
+import api, { fetchWebSession, refreshSession, clearLocalSession } from "./api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import marketSocket from "./marketSocket";
+import {
+  IS_WEB,
+  TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  USER_KEY,
+  setCsrfToken,
+} from "./sessionState";
 
-const TOKEN_KEY = "token";
+// ─── Session helpers ──────────────────────────────────────────────────────────
+//
+// WEB:    the server keeps the session in HttpOnly cookies, so there is no token
+//         here at all — only the public profile ("user") and an in-memory CSRF
+//         token.
+// NATIVE: short-lived access token + refresh token in AsyncStorage.
 
-// ─── Token helpers ────────────────────────────────────────────────────────────
-
-export const getStoredToken = async () => {
+// Is someone logged in? Used once at app start.
+export const hasSession = async () => {
   try {
-    return await AsyncStorage.getItem(TOKEN_KEY);
+    if (!IS_WEB) {
+      return !!(await AsyncStorage.getItem(TOKEN_KEY));
+    }
+
+    // Ask the server whether the cookie session is alive.
+    let session = await fetchWebSession();
+    if (!session) {
+      // Access cookie missing/expired → try the refresh cookie once.
+      const result = await refreshSession();
+      if (result === "ok") session = await fetchWebSession();
+      else if (result === "error") {
+        // Offline (e.g. the installed PWA opened with no network): trust the
+        // remembered profile so the cached app shell still opens.
+        return !!(await AsyncStorage.getItem(USER_KEY));
+      }
+    }
+
+    if (session?.user) {
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(session.user));
+      return true;
+    }
+    await clearLocalSession();
+    return false;
   } catch {
-    return null;
+    return false;
   }
 };
 
-// The shared market socket registers itself with the server as whoever was
-// logged in when it connected. Tell it whenever that changes so order
-// notifications can never go to the previous user's session.
-const storeToken = async (token) => {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
-  marketSocket.resetIdentity();
-};
+// Kept for existing imports. On web this is not a token any more.
+export const getStoredToken = async () => ((await hasSession()) ? "session" : null);
 
-const clearToken = async () => {
-  await AsyncStorage.removeItem(TOKEN_KEY);
-  await AsyncStorage.removeItem("user");
+const profileOf = (d) => ({
+  id: d.id,
+  username: d.username,
+  fullName: d.fullName,
+  email: d.email,
+  avatar: d.avatar,
+});
+
+// Persist a successful login/signup response, whichever platform it came from.
+// The user is written FIRST: the market socket reads it to decide who is
+// logged in, then asks for a ticket.
+const storeSession = async (data) => {
+  await AsyncStorage.setItem(USER_KEY, JSON.stringify(profileOf(data)));
+
+  if (IS_WEB) {
+    setCsrfToken(data.csrfToken);
+  } else {
+    await AsyncStorage.setItem(TOKEN_KEY, data.token);
+    if (data.refreshToken) await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+  }
+
   marketSocket.resetIdentity();
 };
 
 // Google login/signup hit a separate backend route (/auth/google) and
 // were, until now, persisting their session with SecureStore instead of
-// AsyncStorage — a different storage backend than the one getStoredToken()
-// (and api.js's request interceptor) actually reads from. That meant a
-// Google session looked successful for one screen, then silently failed
-// auth on the very next API call / app relaunch. This helper makes Google
-// auth persist through the exact same path as email/password auth.
+// AsyncStorage — a different storage backend than the one the request
+// interceptor actually reads from. This helper makes Google auth persist
+// through the exact same path as email/password auth.
 export const persistGoogleSession = async (data) => {
-  await storeToken(data.token);
-
-  await AsyncStorage.setItem(
-    "user",
-    JSON.stringify({
-      id: data.id,
-      username: data.username,
-      fullName: data.fullName,
-      email: data.email,
-      avatar: data.avatar,
-    }),
-  );
+  await storeSession(data);
 };
 
 // ─── Auth calls ───────────────────────────────────────────────────────────────
@@ -59,20 +92,9 @@ const signup = async ({ fullName, email, password }) => {
     password,
   });
 
-  // Mirror login()'s persistence — SignupPage navigates straight into
-  // MainTabs after this resolves, so without storing the token/user here
-  // the very first screens the person sees would have no auth session.
-  await storeToken(response.data.token);
-
-  await AsyncStorage.setItem(
-    "user",
-    JSON.stringify({
-      id: response.data.id,
-      username: response.data.username,
-      fullName: response.data.fullName,
-      email: response.data.email,
-    }),
-  );
+  // SignupPage navigates straight into MainTabs after this resolves, so the
+  // session must be in place before it does.
+  await storeSession(response.data);
 
   return response.data;
 };
@@ -80,28 +102,41 @@ const signup = async ({ fullName, email, password }) => {
 export const login = async (email, password) => {
   const response = await api.post("/auth/login", { email, password });
 
-  await storeToken(response.data.token);
-
-  await AsyncStorage.setItem(
-    "user",
-    JSON.stringify({
-      id: response.data.id,
-      username: response.data.username,
-      fullName: response.data.fullName,
-      email: response.data.email,
-    }),
-  );
+  await storeSession(response.data);
 
   return response.data;
 };
 
+// Revokes the session on the server (so a copied token/cookie stops working
+// immediately), then clears this device.
 export const logout = async () => {
+  let serverError = null;
   try {
-    const response = await api.post("/auth/logout");
+    // (never `null`: axios would send the literal JSON `null`, which the server's JSON parser rejects)
+    const body = IS_WEB
+      ? {}
+      : { refreshToken: await AsyncStorage.getItem(REFRESH_TOKEN_KEY) };
+    const response = await api.post("/auth/logout", body, { __noRefresh: true, __silent: true });
     return response.data;
+  } catch (err) {
+    serverError = err;
+    // On the web the cookie lives in the browser; if we could not reach the
+    // server to clear it, pretending to be logged out would be a lie.
+    if (IS_WEB && !err?.response) throw err;
   } finally {
-    await clearToken();
+    if (!(IS_WEB && serverError && !serverError.response)) {
+      await clearLocalSession();
+      marketSocket.resetIdentity();
+    }
   }
+};
+
+// Sign out of every device.
+export const logoutEverywhere = async () => {
+  const response = await api.post("/auth/logout-all");
+  await clearLocalSession();
+  marketSocket.resetIdentity();
+  return response.data;
 };
 
 // password is only required for local (email/password) accounts — the
@@ -112,21 +147,23 @@ export const deleteAccount = async (password) => {
     data: password ? { password } : {},
   });
 
-  await clearToken();
-  await AsyncStorage.removeItem("user");
+  await clearLocalSession();
+  marketSocket.resetIdentity();
 
   return response.data;
 };
 
 // ─── Default export (object) so both import styles work ──────────────────────
 // LoginPage.js  → import authService from '...'  → authService.login(...)
-// App.js        → import { getStoredToken } from '...'  → getStoredToken()
+// App.js        → import { hasSession } from '...'  → hasSession()
 
 const authService = {
   signup,
   login,
   logout,
+  logoutEverywhere,
   getStoredToken,
+  hasSession,
   deleteAccount,
   persistGoogleSession,
 };

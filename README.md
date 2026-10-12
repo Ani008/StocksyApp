@@ -61,7 +61,28 @@ MONGO_URI=
 JWT_SECRET=              
 INTERNAL_API_KEY=        # shared secret for backend_py -> POST /api/fundamentals (24+ chars)
 ADMIN_USER_IDS=          # comma-separated user ids allowed to see /api/revenue/*
+NODE_ENV=production      # production: ONLY CORS_ORIGINS may use the API from a browser
+CORS_ORIGINS=            # origins of the WEB APP, comma-separated, e.g. https://app.stocksy.online
+# ── optional ──
+COOKIE_DOMAIN=           # e.g. .stocksy.online if the web app and API are sibling subdomains
+COOKIE_SAMESITE=lax      # lax (default) | strict | none (only if web app and API are on different sites)
+ACCESS_TOKEN_TTL_SECONDS=900    # access token lifetime (default 15 min)
+REFRESH_TOKEN_TTL_DAYS=30       # refresh token lifetime, renewed on each use
+SESSION_ABSOLUTE_DAYS=90        # hard cap on a login session
+WS_MAX_CONNECTIONS_PER_IP=10    # simultaneous WebSockets per client IP
+WS_MAX_PAYLOAD_BYTES=1024       # largest message a client may send us
 ```
+
+> **Sessions (web vs native).** The web app/PWA keeps its login in two HttpOnly cookies
+> (nothing in localStorage). The native apps keep using `Authorization: Bearer`, now with a
+> short-lived access token plus a refresh token. Run the new migration once:
+> `psql -d <db> -f Stocksy_Server/migrations/013_auth_sessions.sql`.
+> Everyone is signed out once when this ships (old 30-day tokens are no longer accepted).
+>
+> **`CORS_ORIGINS`** — list the origin(s) the *web app* is served from, not the API's own
+> address. Empty in production = no browser origin is allowed. In development
+> (`NODE_ENV` not `production`) `http://localhost:*` and `http://127.0.0.1:*` are allowed
+> automatically, so `expo start --web` works without setting it.
 
 > **`INTERNAL_API_KEY`** — the fundamentals scheduler (`backend_py/fundamentals.py`) sends
 > this in an `X-Internal-Key` header. If it is missing or shorter than 24 characters the

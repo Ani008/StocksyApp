@@ -14,9 +14,29 @@ import { WS_URL } from "../src/config/env";
 import { showToast } from "./uiBridge";
 import { createMarketSocket } from "./marketSocketCore";
 
-// Same key api.js and authService.js use. (Read directly rather than via
-// authService to avoid an import cycle: authService calls resetIdentity()).
-const TOKEN_KEY = "token";
+// Read the profile directly rather than via authService to avoid an import
+// cycle: authService calls resetIdentity().
+import api from "./api";
+import { USER_KEY } from "./sessionState";
+
+// WHO is logged in (the user id). It is only a marker for "has the identity
+// changed?" — it is never sent to the server. The session token itself is not
+// readable here on web (HttpOnly cookie) and must not go in the WebSocket URL.
+const getIdentity = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw)?.id || null : null;
+  } catch {
+    return null;
+  }
+};
+
+// One-time, 30-second ticket the server exchanges for the user's identity on
+// the WebSocket handshake. Silent: a failure just means "price feed only".
+const getTicket = async () => {
+  const res = await api.post("/auth/ws-ticket", {}, { __silent: true });
+  return res.data?.ticket || null;
+};
 
 // Only an explicit "background" counts as backgrounded. On native,
 // currentState can be null/"unknown" briefly at startup and "inactive" during
@@ -60,7 +80,8 @@ const network = hasBrowserEvents
 
 const marketSocket = createMarketSocket({
   url: WS_URL,
-  getToken: () => AsyncStorage.getItem(TOKEN_KEY),
+  getToken: getIdentity,
+  getTicket,
   WebSocketImpl: WebSocket,
   appState,
   network,

@@ -1,12 +1,6 @@
-const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { pool } = require("../config/postgres");
-
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
-  });
-};
+const { startSession } = require("./session");
 
 const signupUser = async (req, res) => {
   console.log("\n───────────────────────────────────────");
@@ -80,19 +74,8 @@ RETURNING *
     const user = result.rows[0];
     console.log("[SIGNUP] ✅ User created:", user.id);
 
-    res.status(201).json({
-      id: user.id,
-
-      username: user.username,
-
-      fullName: user.full_name,
-
-      email: user.email,
-
-      demoBalance: user.demo_balance,
-
-      token: generateToken(user.id),
-    });
+    // Web: tokens go in HttpOnly cookies. Native: token + refreshToken in the body.
+    res.status(201).json(await startSession(req, res, user));
   } catch (error) {
     // message only — the full pg error object includes row values
     // (e.g. the email in a "duplicate key" detail).
@@ -155,19 +138,7 @@ WHERE email=$1
 
     if (isMatch) {
       console.log("[LOGIN] ✅ Login successful for:", user.username);
-      res.json({
-        id: user.id,
-
-        username: user.username,
-
-        fullName: user.full_name,
-
-        email: user.email,
-
-        demoBalance: user.demo_balance,
-
-        token: generateToken(user.id),
-      });
+      res.json(await startSession(req, res, user));
     } else {
       console.log("[LOGIN] ❌ Password did not match");
       res.status(401).json({
@@ -186,13 +157,7 @@ WHERE email=$1
   }
 };
 
-const logoutUser = (req, res) => {
-  console.log("[LOGOUT] Request received");
-  res.status(200).json({ message: "Logged out successfully" });
-};
-
 module.exports = {
   signupUser,
   loginUser,
-  logoutUser,
 };

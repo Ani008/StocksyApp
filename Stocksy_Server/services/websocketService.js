@@ -24,10 +24,12 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 const WebSocket = require("ws");
-const jwt = require("jsonwebtoken");
 const { URL } = require("url");
-const connectedClients = new Map();
+const connectedClients = new Map(); // userId -> Set<ws> (one user can have several tabs/devices)
 const INSTRUMENTS = require("../config/instruments");
+const { consumeTicket } = require("./wsTicketService");
+const sessions = require("./sessionService");
+const { isAllowedOrigin } = require("../config/origins");
 
 // ── Flexible import — handles all 3 common export shapes ────────────────────
 // Shape A: module.exports = client          → require() returns client directly
@@ -100,124 +102,254 @@ const INSTRUMENT_KEYS = [
 // Pre-build the Redis keys array once — no string building on every tick
 const REDIS_KEYS = INSTRUMENT_KEYS.map((k) => `stock:${k}`);
 
-// Push interval in ms
-const PUSH_INTERVAL_MS = 800; // slightly under 1s so app always feels live
+// ── Limits (env-tunable) ────────────────────────────────────────────────────
+const intEnv = (name, fallback) => {
+  const n = parseInt(process.env[name], 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const PUSH_INTERVAL_MS = 800;                       // slightly under 1s so app always feels live
+const MAX_PAYLOAD_BYTES = intEnv("WS_MAX_PAYLOAD_BYTES", 1024); // clients never need to send anything big
+const MAX_CONNS_PER_IP = intEnv("WS_MAX_CONNECTIONS_PER_IP", 10);
+const MAX_MSGS_PER_10S = intEnv("WS_MAX_MESSAGES_PER_10S", 20);
+const HEARTBEAT_MS = 30_000;
+const SESSION_CHECK_MS = 60_000;
 
-function initWebSocket(server) {
-    const wss = new WebSocket.Server({ server });
-    console.log('WebSocket server ready');
+const CLOSE_SESSION_ENDED = 4401;
 
-    wss.on('connection', (ws, req) => {
-        console.log('React Native client connected');
+const ALL_KEYS = [
+  ...INSTRUMENT_KEYS.map((k) => `stock:${k}`),
+  ...INSTRUMENT_KEYS.map((k) => `stock_live:${k}`),
+  ...INSTRUMENT_KEYS.map((k) => `stock_ts:${k}`),
+];
+const N = INSTRUMENT_KEYS.length;
 
-        // ── Identify the connection, if possible ──────────────────────────
-        // The live-price feed itself is intentionally public (no auth
-        // required just to watch prices) — but WITHOUT registering the
-        // socket by userId here, notifyClient() has nothing to send to,
-        // which silently breaks ORDER_FILLED / ORDER_REJECTED / RMS
-        // square-off notifications. The frontend appends its JWT as
-        // ?token=... on the WS URL (see useMarketData.js); if it's
-        // missing or invalid we still serve the price feed, we just
-        // can't push per-user notifications to this connection.
-        let userId = null;
-        try {
-            const { searchParams } = new URL(req.url, 'http://localhost');
-            const token = searchParams.get('token');
-            if (token) {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                userId = String(decoded.id);
-                connectedClients.set(userId, ws);
-                console.log(`[WS] Registered client for user ${userId}`);
-            }
-        } catch (err) {
-            console.log('[WS] Token missing/invalid — serving price feed only:', err.message);
-        }
+// With `trust proxy 1` the app always sits behind exactly one proxy, which
+// appends the real client address as the LAST X-Forwarded-For entry (anything
+// before it is client-supplied and can be forged).
+function clientIp(req) {
+  const xff = String(req.headers["x-forwarded-for"] || "").split(",").map((v) => v.trim()).filter(Boolean);
+  return xff.length ? xff[xff.length - 1] : req.socket.remoteAddress || "unknown";
+}
 
-        const interval = setInterval(async () => {
-            try {
-                // ── ONE round trip for all stock prices ───────────────────────
-                const values = await redisClient.mGet(REDIS_KEYS);
+function reject(socket, status, text) {
+  try {
+    socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+  } catch { /* ignore */ }
+  socket.destroy();
+}
 
-                // ── ONE round trip for all live indicators ────────────────────
-                const liveKeys = INSTRUMENT_KEYS.map(k => `stock_live:${k}`);
-                const liveValues = await redisClient.mGet(liveKeys);
+function addUserSocket(userId, ws) {
+  if (!connectedClients.has(userId)) connectedClients.set(userId, new Set());
+  connectedClients.get(userId).add(ws);
+}
+function removeUserSocket(userId, ws) {
+  const set = connectedClients.get(userId);
+  if (!set) return;
+  set.delete(ws);
+  if (set.size === 0) connectedClients.delete(userId);
+}
 
-                // ── ONE round trip for all timestamps ─────────────────────────
-                const tsKeys = INSTRUMENT_KEYS.map(k => `stock_ts:${k}`);
-                const tsValues = await redisClient.mGet(tsKeys);
+function initWebSocket(server, opts = {}) {
+  const pushMs = opts.pushIntervalMs || PUSH_INTERVAL_MS;
+  const sessionCheckMs = opts.sessionCheckMs || SESSION_CHECK_MS;
 
-                // Check if we have any data at all
-                const hasData = values.some(v => v !== null);
-                if (!hasData) {
-                    ws.send(JSON.stringify({
-                        error: 'No data in Redis. Run python websocket_client.py first.'
-                    }));
-                    return;
-                }
+  // noServer + our own 'upgrade' handler so we can refuse a connection
+  // (wrong Origin, too many from one IP) before any WebSocket exists.
+  const wss = new WebSocket.Server({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
+  console.log('WebSocket server ready');
 
-                const stockData = {};
+  const ipCounts = new Map();
 
-                INSTRUMENT_KEYS.forEach((instrumentKey, i) => {
-                    const raw = values[i];
-                    if (!raw) return; // instrument not yet in Redis, skip
+  server.on('upgrade', async (req, socket, head) => {
+    socket.on('error', () => {});
 
-                    const meta = INSTRUMENTS[instrumentKey];
-                    const feedData = JSON.parse(raw);
-                    const isLive = liveValues[i] !== null; // key exists = market open
-                    const lastUpdated = tsValues[i] ? parseFloat(tsValues[i]) : null;
+    // Browsers always send Origin on a WebSocket handshake and JavaScript
+    // cannot change it. Anything claiming to be a web page must be OUR web
+    // app. (Native apps send no Origin and are allowed.)
+    const origin = req.headers.origin;
+    if (origin && !isAllowedOrigin(origin)) {
+      console.warn(`[WS] Rejected origin ${origin}`);
+      return reject(socket, 403, 'Forbidden');
+    }
 
-                    stockData[instrumentKey] = {
-                        ...feedData,
-                        symbol:      meta?.symbol  || instrumentKey,
-                        name:        meta?.name    || instrumentKey,
-                        sector:      meta?.sector  || 'Unknown',
-                        isLive,
-                        lastUpdated,
-                    };
-                });
+    const ip = clientIp(req);
+    if ((ipCounts.get(ip) || 0) >= MAX_CONNS_PER_IP) {
+      console.warn(`[WS] Too many connections from ${ip}`);
+      return reject(socket, 429, 'Too Many Requests');
+    }
+    // Reserve the slot NOW (before the async ticket lookup) so a burst of
+    // simultaneous handshakes cannot slip past the cap.
+    ipCounts.set(ip, (ipCounts.get(ip) || 0) + 1);
 
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        type: 'MARKET_DATA',
-                        timestamp: Date.now(),
-                        data: stockData,
-                    }));
-                }
+    let identity = null;
+    try {
+      const { searchParams } = new URL(req.url, 'http://localhost');
+      identity = await consumeTicket(searchParams.get('ticket')); // { uid, sid } | null
+    } catch { /* anonymous */ }
 
-            } catch (err) {
-                console.error('WebSocket interval error:', err);
-            }
-        }, PUSH_INTERVAL_MS);
+    if (socket.destroyed) {
+      ipCounts.set(ip, Math.max(0, (ipCounts.get(ip) || 1) - 1));
+      return;
+    }
 
-        ws.on('close', () => {
-            console.log('Client disconnected');
-            clearInterval(interval);
-            if (userId && connectedClients.get(userId) === ws) {
-                connectedClients.delete(userId);
-            }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws._ip = ip;
+      ws._identity = identity;
+      wss.emit('connection', ws, req);
+    });
+  });
+
+  // ── ONE shared price feed ───────────────────────────────────────────────
+  // Used to be a 800ms timer + 3 Redis reads PER CONNECTION, so every
+  // anonymous visitor cost the server 3 reads every 0.8s. Now: one timer, one
+  // Redis read, one JSON string, sent to everyone — and nothing at all runs
+  // while nobody is connected.
+  let feedTimer = null;
+  let feedBusy = false;
+
+  async function pushFeed() {
+    if (feedBusy) return; // previous tick still reading Redis; skip, don't pile up
+    feedBusy = true;
+    try {
+      const all = await redisClient.mGet(ALL_KEYS); // single round trip
+      const values = all.slice(0, N);
+      const liveValues = all.slice(N, 2 * N);
+      const tsValues = all.slice(2 * N);
+
+      let message;
+      if (!values.some((v) => v !== null)) {
+        message = JSON.stringify({ error: 'No data in Redis. Run python websocket_client.py first.' });
+      } else {
+        const stockData = {};
+        INSTRUMENT_KEYS.forEach((instrumentKey, i) => {
+          const raw = values[i];
+          if (!raw) return; // instrument not yet in Redis, skip
+          const meta = INSTRUMENTS[instrumentKey];
+          stockData[instrumentKey] = {
+            ...JSON.parse(raw),
+            symbol: meta?.symbol || instrumentKey,
+            name: meta?.name || instrumentKey,
+            sector: meta?.sector || 'Unknown',
+            isLive: liveValues[i] !== null, // key exists = market open
+            lastUpdated: tsValues[i] ? parseFloat(tsValues[i]) : null,
+          };
         });
+        message = JSON.stringify({ type: 'MARKET_DATA', timestamp: Date.now(), data: stockData });
+      }
 
-        ws.on('error', (err) => {
-            console.error('WebSocket error:', err);
-            clearInterval(interval);
-            if (userId && connectedClients.get(userId) === ws) {
-                connectedClients.delete(userId);
-            }
-        });
+      for (const ws of wss.clients) {
+        if (ws.readyState === WebSocket.OPEN) ws.send(message);
+      }
+    } catch (err) {
+      console.error('WebSocket feed error:', err.message);
+    } finally {
+      feedBusy = false;
+    }
+  }
+
+  const startFeed = () => { if (!feedTimer) feedTimer = setInterval(pushFeed, pushMs); };
+  const stopFeed = () => { if (feedTimer && wss.clients.size === 0) { clearInterval(feedTimer); feedTimer = null; } };
+
+  wss.on('connection', (ws) => {
+    const identity = ws._identity;
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+
+    let userId = null;
+    if (identity?.uid) {
+      userId = String(identity.uid);
+      ws._sid = identity.sid;
+      ws._uid = userId;
+      addUserSocket(userId, ws);
+      console.log(`[WS] Registered client for user ${userId}`);
+    } else {
+      console.log('[WS] Anonymous client — price feed only');
+    }
+
+    // Clients never need to send anything; cap how much they can.
+    let msgs = 0;
+    const msgTimer = setInterval(() => { msgs = 0; }, 10_000);
+    ws.on('message', () => {
+      if (++msgs > MAX_MSGS_PER_10S) ws.close(1008, 'Too many messages');
     });
 
-    return wss;
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      clearInterval(msgTimer);
+      ipCounts.set(ws._ip, Math.max(0, (ipCounts.get(ws._ip) || 1) - 1));
+      if (ipCounts.get(ws._ip) === 0) ipCounts.delete(ws._ip);
+      if (userId) removeUserSocket(userId, ws);
+      stopFeed();
+    };
+    ws.on('close', cleanup);
+    ws.on('error', (err) => { console.error('WebSocket error:', err.message); cleanup(); });
+
+    startFeed();
+    pushFeed(); // first frame immediately instead of waiting up to 800ms
+  });
+
+  // ── heartbeat: drop connections whose client vanished ────────────────────
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (!ws.isAlive) { ws.terminate(); continue; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch { /* ignore */ }
+    }
+  }, opts.heartbeatMs || HEARTBEAT_MS);
+  heartbeat.unref();
+
+  // ── end live sockets when their session ends ─────────────────────────────
+  const endSocket = (ws) => { try { ws.close(CLOSE_SESSION_ENDED, 'session ended'); } catch { /* ignore */ } };
+
+  // instant: this process just revoked a session / all of a user's sessions
+  const onRevoked = ({ sid, userId, sids }) => {
+    for (const ws of wss.clients) {
+      if (!ws._sid) continue;
+      if ((sid && ws._sid === sid) || (userId && ws._uid === String(userId)) || (sids && sids.includes(ws._sid))) {
+        endSocket(ws);
+      }
+    }
+  };
+  sessions.events.on('revoked', onRevoked);
+
+  // backstop: covers revocations done by another server process, and sessions
+  // that simply reached their expiry.
+  const sessionCheck = setInterval(async () => {
+    const authed = [...wss.clients].filter((ws) => ws._sid);
+    if (!authed.length) return;
+    try {
+      const alive = new Set(await sessions.activeIds([...new Set(authed.map((ws) => ws._sid))]));
+      for (const ws of authed) if (!alive.has(ws._sid)) endSocket(ws);
+    } catch (err) {
+      console.error('[WS] session check failed:', err.message);
+    }
+  }, sessionCheckMs);
+  sessionCheck.unref();
+
+  wss.on('close', () => {
+    clearInterval(heartbeat);
+    clearInterval(sessionCheck);
+    if (feedTimer) clearInterval(feedTimer);
+    sessions.events.off('revoked', onRevoked);
+  });
+
+  return wss;
 }
 
 
 function notifyClient(userId, payload) {
-  const client = connectedClients.get(String(userId));
-
-  if (client && client.readyState === WebSocket.OPEN) {
-    client.send(JSON.stringify(payload));
+  const sockets = connectedClients.get(String(userId));
+  if (!sockets) return;
+  const message = JSON.stringify(payload);
+  for (const ws of sockets) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(message);
   }
 }
+
 module.exports = {
   initWebSocket,
   notifyClient,
+  clientIp,
 };

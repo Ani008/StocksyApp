@@ -2,6 +2,8 @@ const bcrypt = require("bcryptjs");
 const { pool } = require("../config/postgres");
 const { deleteAccount } = require("../repositories/accountDeletionRepository");
 const logger = require("../utils/logger");
+const sessions = require("../services/sessionService");
+const { clearSessionCookies } = require("../utils/sessionCookies");
 
 /**
  * DELETE /api/auth/account
@@ -49,6 +51,11 @@ const deleteAccountHandler = async (req, res) => {
     }
 
     const summary = await deleteAccount(userId);
+
+    // The session rows are already gone (users ON DELETE CASCADE); this tells
+    // any still-open WebSocket for that user to close right now.
+    await sessions.revokeAllForUser(userId, "account_deleted").catch(() => {});
+    if (req.auth?.source === "cookie") clearSessionCookies(res);
 
     logger.info(`[ACCOUNT DELETED] user=${userId}`, summary);
 

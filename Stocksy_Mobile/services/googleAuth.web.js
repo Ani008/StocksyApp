@@ -80,8 +80,12 @@ export const signInWithGoogle = async () => {
     `${API_BASE_URL}/auth/google/web`,
     {
       method: "POST",
+      // credentials: the server answers with the session in HttpOnly cookies;
+      // X-Client-Type asks it to do that (and keep tokens out of the body).
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
+        "X-Client-Type": "web",
       },
       body: JSON.stringify({
         code,

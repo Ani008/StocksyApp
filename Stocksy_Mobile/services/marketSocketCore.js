@@ -51,6 +51,7 @@ export function createMarketSocket(deps) {
   const {
     url: baseUrl,
     getToken,
+    getTicket,
     WebSocketImpl,
     appState,
     network,
@@ -237,19 +238,31 @@ export function createMarketSocket(deps) {
     }
 
     const myGen = ++generation;
+    // `token` is only an IDENTITY marker (who is logged in), never put on the wire.
     let token = null;
     try {
       token = (await getToken()) || null;
     } catch (e) {
       /* storage unavailable: connect anonymously (price feed is public) */
     }
+    // Logged in → ask the server for a one-time, 30-second ticket and connect
+    // with that. The real session token never appears in the URL (URLs end up
+    // in logs and the browser console). No ticket → anonymous price feed.
+    let ticket = null;
+    if (token && getTicket) {
+      try {
+        ticket = (await getTicket()) || null;
+      } catch (e) {
+        /* session ended or server unreachable: price feed only */
+      }
+    }
     // Superseded by a newer connect()/forceReconnect, or stopped meanwhile.
     if (myGen !== generation || !shouldRun()) return;
     if (ws && (ws.readyState === OPEN || ws.readyState === CONNECTING)) return;
 
     connectedToken = token;
-    const target = token
-      ? `${baseUrl}?token=${encodeURIComponent(token)}`
+    const target = ticket
+      ? `${baseUrl}?ticket=${encodeURIComponent(ticket)}`
       : baseUrl;
 
     let sock;

@@ -62,16 +62,17 @@ const ProfilePage = ({ navigation }) => {
     try {
       console.log("🔥 LOGOUT STARTED");
 
-      await AsyncStorage.removeItem("token");
-      await AsyncStorage.removeItem("user");
-
-      console.log("✅ AsyncStorage cleared");
+      // Revokes the session on the server (so a copied token/cookie stops
+      // working at once) and clears this device. Local-only clearing is not
+      // enough any more: the web session lives in an HttpOnly cookie.
+      await authService.logout();
 
       resetToLogin();
 
       console.log("✅ LOGOUT COMPLETE");
     } catch (error) {
       console.error("❌ LOGOUT ERROR:", error);
+      showToast("Couldn't log out — check your connection and try again.", "error");
     }
   };
 

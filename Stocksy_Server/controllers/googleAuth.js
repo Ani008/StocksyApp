@@ -1,15 +1,9 @@
 const { OAuth2Client } = require("google-auth-library");
-const jwt = require("jsonwebtoken");
 const { pool } = require("../config/postgres");
 const logger = require("../utils/logger");
+const { startSession } = require("./session");
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
-  });
-};
 
 const getAllowedWebRedirectUris = () => {
   return String(process.env.GOOGLE_WEB_REDIRECT_URIS || "")
@@ -18,7 +12,7 @@ const getAllowedWebRedirectUris = () => {
     .filter(Boolean);
 };
 
-const createOrUpdateGoogleUser = async (payload) => {
+const createOrUpdateGoogleUser = async (payload, req, res) => {
   const googleId = payload.sub;
   const email = payload.email;
   const fullName = payload.name;
@@ -105,15 +99,7 @@ const createOrUpdateGoogleUser = async (payload) => {
     user = created.rows[0];
   }
 
-  return {
-    id: user.id,
-    fullName: user.full_name,
-    username: user.username,
-    email: user.email,
-    avatar: user.avatar,
-    demoBalance: user.demo_balance,
-    token: generateToken(user.id),
-  };
+  return startSession(req, res, user);
 };
 
 /**
@@ -141,7 +127,7 @@ const googleLogin = async (req, res) => {
 
     const payload = ticket.getPayload();
 
-    const data = await createOrUpdateGoogleUser(payload);
+    const data = await createOrUpdateGoogleUser(payload, req, res);
 
     return res.json(data);
   } catch (err) {
@@ -252,7 +238,7 @@ const googleWebLogin = async (req, res) => {
 
     const payload = ticket.getPayload();
 
-    const data = await createOrUpdateGoogleUser(payload);
+    const data = await createOrUpdateGoogleUser(payload, req, res);
 
     return res.json(data);
   } catch (err) {
