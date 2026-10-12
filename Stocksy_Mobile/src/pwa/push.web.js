@@ -98,7 +98,7 @@ export async function getPushState() {
   const sub = await reg.pushManager.getSubscription();
   return derivePushState({
     supported: true,
-    serverEnabled: config ? config.enabled !== false : true,
+    serverEnabled: Boolean(config && config.enabled),
     permission: Notification.permission,
     hasSubscription: Boolean(sub),
     ...env,

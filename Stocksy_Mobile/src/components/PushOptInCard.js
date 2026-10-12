@@ -33,6 +33,21 @@ const COPY = {
   },
 };
 
+// Dev builds only: say WHY the card is missing instead of silently hiding it
+// (production users shouldn't see setup problems).
+const DEV_COPY = {
+  [PUSH_STATE.UNAVAILABLE]: {
+    icon: "construct-outline",
+    title: "Dev: push is off on the server",
+    body: "GET /api/push/public-key says enabled:false. Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT in the server .env, restart it, and run migration 013.",
+  },
+  [PUSH_STATE.UNSUPPORTED]: {
+    icon: "construct-outline",
+    title: "Dev: push isn't available here",
+    body: "Needs a service worker on https:// or http://localhost (not http://<LAN-IP>), a browser with the Push API, and a reachable /api/push/public-key.",
+  },
+};
+
 export default function PushOptInCard() {
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -67,8 +82,8 @@ export default function PushOptInCard() {
     }
   }, [busy, state]);
 
-  if (Platform.OS !== "web" || !COPY[state]) return null;
-  const c = COPY[state];
+  const c = COPY[state] || (__DEV__ ? DEV_COPY[state] : null);
+  if (Platform.OS !== "web" || !c) return null;
 
   return (
     <View style={styles.card}>
