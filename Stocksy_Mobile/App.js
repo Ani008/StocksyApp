@@ -43,6 +43,7 @@ import { UPDATE_STATUS } from "./src/utils/appUpdate";
 import SplashVideoScreen from "./src/components/SplashVideoScreen";
 import SplashStaticScreen from "./src/components/SplashStaticScreen";
 import PwaUpdateBar from "./src/components/PwaUpdateBar";
+import WebFrame from "./src/components/WebFrame";
 import { PwaProvider } from "./src/context/PwaProvider";
 import { registerSessionExpiredHandler } from "./services/uiBridge";
 import { listenForNotificationClicks } from "./src/pwa/push";
@@ -322,16 +323,20 @@ function UpdateGate({ children }) {
 export default function App() {
   return (
     <PwaProvider>
-      {/* PwaUpdateBar renders nothing on native and when no web update is
-          waiting, so the app layout is unchanged in those cases. */}
-      <View style={styles.root}>
-        <PwaUpdateBar />
-        <AppUpdateProvider>
-          <UpdateGate>
-            <AppContent />
-          </UpdateGate>
-        </AppUpdateProvider>
-      </View>
+      {/* WebFrame keeps the app a phone-sized column on wide web screens and
+          is a pass-through on native. PwaUpdateBar renders nothing on native
+          and when no web update is waiting, so the app layout is unchanged in
+          those cases. */}
+      <WebFrame>
+        <View style={styles.root}>
+          <PwaUpdateBar />
+          <AppUpdateProvider>
+            <UpdateGate>
+              <AppContent />
+            </UpdateGate>
+          </AppUpdateProvider>
+        </View>
+      </WebFrame>
     </PwaProvider>
   );
 }
