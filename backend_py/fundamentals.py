@@ -13,7 +13,8 @@ from shareholding import SHAREHOLDING_DATA
 
 # Configuration
 SYMBOLS = ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "BAJFINANCE", "KOTAKBANK", "HDFCLIFE", "BAJAJFINSV", "TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "RELIANCE", "ONGC", "BPCL", "POWERGRID", "NTPC", "MARUTI", "TMCV", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "HINDUNILVR", "ITC", "NESTLEIND", "DABUR", "BRITANNIA", "SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "TATASTEEL", "HINDALCO", "JSWSTEEL", "COALINDIA", "BHARTIARTL", "ADANIPORTS", "ADANIGREEN", "ULTRACEMCO", "LT", "GRASIM", "VEDL", "BEL", "IRFC", "SUZLON", "ADANIENT", "SIEMENS"] # Add all 50+ here
-NODE_BACKEND_URL = "http://localhost:5050/api/fundamentals" # Your Node.js endpoint
+# Where the Node API lives. Defaults to the same machine (PM2 runs both together).
+NODE_BACKEND_URL = os.getenv("NODE_BACKEND_URL", "http://localhost:5050/api/fundamentals")
 
 
 INDUSTRY_PE = {

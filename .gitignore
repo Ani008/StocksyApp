@@ -1,6 +1,9 @@
 
 .env
 .env.*
+# ...but the committed templates (no real secrets in these) are tracked:
+!.env.example
+!.env.*.example
 
 
 node_modules/

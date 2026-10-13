@@ -42,6 +42,12 @@ cd STOCKSY
 
 You need **3 separate `.env` files** — one in each folder. Never commit these to Git.
 
+> **Easiest:** copy the committed templates and fill them in:
+> `Stocksy_Server/.env.example`, `backend_py/.env.example`, `Stocksy_Mobile/.env.example`
+> (and `Stocksy_Mobile/.env.production.example` for the production web build).
+> They are the up-to-date lists; the blocks below are older and partly out of date
+> (the server uses Postgres, not MongoDB, and runs on port 5050).
+
 ### `backend_py/.env`
 ```env
 REDIS_HOST=
