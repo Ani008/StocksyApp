@@ -4,6 +4,10 @@ import marketSocket from "./marketSocket";
 import * as tokenStore from "./tokenStore";
 import { restoreSession } from "./sessionManager";
 import { disablePush, syncExistingSubscription } from "../src/pwa/push";
+import {
+  setPendingCredentials,
+  clearPendingCredentials,
+} from "./pendingCredentials";
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 // Where the session actually lives (memory on web, secure storage on native)
@@ -27,6 +31,7 @@ const storeSession = async (data) => {
 };
 
 const clearToken = async () => {
+  clearPendingCredentials();
   await tokenStore.clearSession(); // also removes the stored "user" entry
   marketSocket.resetIdentity();
 };
@@ -62,9 +67,15 @@ const signup = async ({ fullName, email, password }) => {
     password,
   });
 
-  // Mirror login()'s persistence — SignupPage navigates straight into
-  // MainTabs after this resolves, so without storing the token/user here
-  // the very first screens the person sees would have no auth session.
+  // The server no longer logs anyone in at signup: it e-mails a code first.
+  // Hand the password to the verification screen (memory only) and let the
+  // caller navigate there.
+  if (response.data?.requiresVerification) {
+    setPendingCredentials(response.data.email || email, password);
+    return response.data;
+  }
+
+  // Older server without email verification: sign in straight away.
   await storeSession(response.data);
 
   await AsyncStorage.setItem(
@@ -81,7 +92,17 @@ const signup = async ({ fullName, email, password }) => {
 };
 
 export const login = async (email, password) => {
-  const response = await api.post("/auth/login", { email, password });
+  let response;
+  try {
+    response = await api.post("/auth/login", { email, password });
+  } catch (err) {
+    // Right password, email not confirmed yet: the verification screen needs
+    // the password (see pendingCredentials.js). LoginPage does the navigation.
+    if (err?.response?.data?.code === "EMAIL_NOT_VERIFIED") {
+      setPendingCredentials(err.response.data.email || email, password);
+    }
+    throw err;
+  }
 
   await storeSession(response.data);
 
@@ -95,6 +116,33 @@ export const login = async (email, password) => {
     }),
   );
 
+  return response.data;
+};
+
+// Confirms the e-mailed code and signs the person in.
+// `password` is whatever they are using right now (typed at signup/login).
+export const verifyEmail = async ({ email, code, password }) => {
+  const response = await api.post("/auth/verify-email", { email, code, password });
+
+  await storeSession(response.data);
+
+  await AsyncStorage.setItem(
+    "user",
+    JSON.stringify({
+      id: response.data.id,
+      username: response.data.username,
+      fullName: response.data.fullName,
+      email: response.data.email,
+      avatar: response.data.avatar,
+    }),
+  );
+
+  clearPendingCredentials();
+  return response.data;
+};
+
+export const resendVerification = async (email) => {
+  const response = await api.post("/auth/resend-verification", { email });
   return response.data;
 };
 
@@ -134,6 +182,8 @@ export const deleteAccount = async (password) => {
 const authService = {
   signup,
   login,
+  verifyEmail,
+  resendVerification,
   logout,
   getStoredToken,
   restoreStoredSession,

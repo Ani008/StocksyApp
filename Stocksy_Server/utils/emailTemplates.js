@@ -1,12 +1,19 @@
 // utils/emailTemplates.js
 
-const forgotPasswordTemplate = (name, otp) => {
+const escapeHtml = (value) =>
+  String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// Shared layout for the e-mails that carry a one-time code. The name is typed
+// by whoever signed up (possibly not the person receiving this), so it is
+// escaped - otherwise a signup could put its own HTML/links in our e-mail.
+const codeEmailTemplate = ({ name, otp, title, heading, intro, minutes, ignoreNote }) => {
+  const safeName = escapeHtml(name || "User");
   return `
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Reset Your Password</title>
+<title>${title}</title>
 </head>
 
 <body style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;">
@@ -29,16 +36,15 @@ Stocksy
 <td style="padding:40px;">
 
 <h2 style="margin-top:0;color:#111827;">
-Reset Your Password
+${heading}
 </h2>
 
 <p style="font-size:16px;color:#4B5563;line-height:26px;">
-Hello ${name || "User"},
+Hello ${safeName},
 </p>
 
 <p style="font-size:16px;color:#4B5563;line-height:26px;">
-We received a request to reset the password for your Stocksy account.
-Use the OTP below to continue.
+${intro}
 </p>
 
 <div style="margin:35px 0;text-align:center;">
@@ -58,12 +64,11 @@ ${otp}
 </div>
 
 <p style="font-size:16px;color:#4B5563;line-height:26px;">
-This OTP will expire in <strong>5 minutes.</strong>
+This code will expire in <strong>${minutes} minutes.</strong>
 </p>
 
 <p style="font-size:16px;color:#4B5563;line-height:26px;">
-If you did not request a password reset, you can safely ignore this email.
-Your password will remain unchanged.
+${ignoreNote}
 </p>
 
 <hr style="margin:35px 0;border:none;border-top:1px solid #E5E7EB;">
@@ -90,6 +95,32 @@ Regards,<br>
 </html>
 `;
 };
+
+const forgotPasswordTemplate = (name, otp, minutes = 10) =>
+  codeEmailTemplate({
+    name,
+    otp,
+    minutes,
+    title: "Reset Your Password",
+    heading: "Reset Your Password",
+    intro:
+      "We received a request to reset the password for your Stocksy account. Use the code below to continue.",
+    ignoreNote:
+      "If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.",
+  });
+
+const verifyEmailTemplate = (name, otp, minutes = 10) =>
+  codeEmailTemplate({
+    name,
+    otp,
+    minutes,
+    title: "Verify Your Email",
+    heading: "Verify Your Email",
+    intro:
+      "Use the code below to confirm this email address for your Stocksy account.",
+    ignoreNote:
+      "If you did not create a Stocksy account, you can safely ignore this email.",
+  });
 
 const alertCreatedTemplate = (name, symbol, targetPrice, direction, action = "NOTIFY", quantity = null) => {
   const directionLabel = direction === "ABOVE" ? "rises to or above" : "falls to or below";
@@ -464,6 +495,7 @@ Regards,<br>
 
 module.exports = {
   forgotPasswordTemplate,
+  verifyEmailTemplate,
   alertCreatedTemplate,
   alertTriggeredTemplate,
   alertExecutedTemplate,

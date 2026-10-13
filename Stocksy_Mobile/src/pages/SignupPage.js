@@ -44,7 +44,7 @@ const SignupPage = ({ navigation }) => {
     if (!email.trim()) newErrors.email = "Email is required";
     else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Invalid email";
     if (!password) newErrors.password = "Password is required";
-    else if (password.length < 6) newErrors.password = "Minimum 6 characters";
+    else if (password.length < 8) newErrors.password = "Minimum 8 characters";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -73,12 +73,17 @@ const SignupPage = ({ navigation }) => {
   const doEmailSignup = async () => {
     setLoading(true);
     try {
-      await authService.signup({
+      const result = await authService.signup({
         fullName: name,
         email,
         password,
       });
-      navigation.replace("MainTabs");
+      if (result?.requiresVerification) {
+        // A code was e-mailed; the account is created once it is entered.
+        navigation.replace("VerifyEmail", { email: result.email });
+      } else {
+        navigation.replace("MainTabs");
+      }
     } catch (err) {
       // No Alert here — the global toast already covers this.
     } finally {
@@ -176,7 +181,7 @@ const SignupPage = ({ navigation }) => {
               label="Password"
               value={password}
               onChangeText={setPassword}
-              placeholder="Enter Your Password"
+              placeholder="At least 8 characters"
               secureTextEntry
               error={errors.password}
             />
