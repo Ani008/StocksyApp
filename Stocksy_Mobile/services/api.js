@@ -28,7 +28,7 @@ const api = axios.create({
 // The auth endpoints manage the session themselves — never "refresh and retry"
 // a failed login or a failed refresh.
 const isAuthEndpoint = (url = '') =>
-  /^\/?auth\/(login|signup|refresh|logout|google)/.test(url);
+  /^\/?auth\/(login|signup|refresh|logout|google|verify-email|resend-verification)/.test(url);
 
 // ─── Request interceptor — attach the access token ────────────────────────────
 // (in memory on web, AsyncStorage on native: see tokenStore.js)

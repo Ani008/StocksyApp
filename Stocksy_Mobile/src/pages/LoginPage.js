@@ -31,8 +31,10 @@ const LoginPage = ({ navigation }) => {
     const newErrors = {};
     if (!email.trim()) newErrors.email = "Email is required";
     else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Invalid email";
+    // No length rule here: accounts made before the 8-character rule may have
+    // shorter passwords and must still be able to log in. The server enforces
+    // the policy when a password is set or changed.
     if (!password) newErrors.password = "Password is required";
-    else if (password.length < 6) newErrors.password = "Minimum 6 characters";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -71,6 +73,14 @@ const LoginPage = ({ navigation }) => {
       // No Alert here — the global toast (wired via api.js's interceptor)
       // already shows this. Keeping the catch so the rejection doesn't
       // bubble up unhandled.
+      //
+      // Right password, but the email was never confirmed: the server has
+      // just e-mailed a code, so go and enter it.
+      if (err?.response?.data?.code === "EMAIL_NOT_VERIFIED") {
+        navigation.navigate("VerifyEmail", {
+          email: err.response.data.email || email.trim().toLowerCase(),
+        });
+      }
     } finally {
       setLoading(false);
     }

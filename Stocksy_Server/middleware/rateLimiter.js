@@ -77,14 +77,15 @@ const authLimiter = rateLimit({
   store: makeRedisStore('rl:auth:'),
 });
 
-// ── OTP limiter (forgot-password send/verify) ───────────────────────────────
-// OTPs are short numeric codes — without a strict limit here they're
-// brute-forceable in minutes, and "send OTP" can otherwise be used to spam
-// a victim's email/SMS.
+// ── OTP limiter (forgot-password + email-verification codes) ────────────────
+// This is the per-IP layer. The real guards are per ACCOUNT and live in
+// services/otpService.js: a code dies after 5 wrong guesses, and sending is
+// capped (30 s apart, 5 per hour) no matter how many IPs the requests come
+// from. 10 here leaves room for a real person's typos and a resend.
 const otpLimiter = rateLimit({
   ...baseOptions,
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 10,
   store: makeRedisStore('rl:otp:'),
 });
 

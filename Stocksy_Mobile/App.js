@@ -56,6 +56,7 @@ import SignupPage from "./src/pages/SignupPage";
 import WalletScreen from "./src/pages/WalletScreen";
 import AllTransactionsPage from "./src/pages/AllTransactionsPage";
 import ForgotPasswordScreen from "./src/pages/ForgotPasswordScreen";
+import VerifyEmailScreen from "./src/pages/VerifyEmailScreen";
 import SearchPage from "./src/pages/SearchPage";
 import BuyOrderScreen from "./src/pages/Buyorderscreen";
 import OrderSuccessScreen from "./src/pages/OrderSuccessScreen";
@@ -282,6 +283,7 @@ function AppContent() {
               name="ForgotPassword"
               component={ForgotPasswordScreen}
             />
+            <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
 
             {/* ── Authenticated shell (tab bar lives inside here) ────────────── */}
             <Stack.Screen name="MainTabs" component={MainTabs} />

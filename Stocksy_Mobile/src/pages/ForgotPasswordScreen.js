@@ -13,6 +13,7 @@ import {
 import Text from "../components/AppText";
 import TextInput from "../components/AppTextInput";
 import Button from "../components/Button";
+import OtpCodeInput, { OTP_LENGTH } from "../components/OtpCodeInput";
 import Input from "../components/Input";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -48,12 +49,11 @@ const ForgotPasswordScreen = ({ navigation }) => {
   const [contactError, setContactError] = useState("");
 
   // Step 2 — OTP
-  const [otp, setOtp] = useState(["", "", "", ""]);
+  const [otp, setOtp] = useState("");
   const [otpError, setOtpError] = useState("");
   const [countdown, setCountdown] = useState(OTP_RESEND_SECONDS);
   const [canResend, setCanResend] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
-  const otpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
 
   // Step 3 — reset
   const [newPass, setNewPass] = useState("");
@@ -136,28 +136,11 @@ const ForgotPasswordScreen = ({ navigation }) => {
   };
 
   // ── Step 2: OTP input handlers ────────────────────────────────────────────
-  const handleOtpChange = (text, index) => {
-    const digit = text.replace(/[^0-9]/g, "").slice(-1);
-    const next = [...otp];
-    next[index] = digit;
-    setOtp(next);
-    setOtpError("");
-    if (digit && index < 3) {
-      otpRefs[index + 1].current?.focus();
-    }
-  };
-
-  const handleOtpKeyPress = (e, index) => {
-    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
-      otpRefs[index - 1].current?.focus();
-    }
-  };
-
   const handleVerifyOtp = async () => {
-    const enteredOtp = otp.join("");
+    const enteredOtp = otp;
 
-    if (enteredOtp.length !== 4) {
-      setOtpError("Enter all 4 digits");
+    if (enteredOtp.length !== OTP_LENGTH) {
+      setOtpError(`Enter all ${OTP_LENGTH} digits`);
       return;
     }
 
@@ -193,7 +176,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
       });
 
       setResendLoading(false);
-      setOtp(["", "", "", ""]);
+      setOtp("");
       setOtpError("");
       setStep(STEP_OTP);
     } catch (err) {
@@ -208,8 +191,8 @@ const ForgotPasswordScreen = ({ navigation }) => {
 
     if (!newPass) {
       errs.newPass = "New password is required";
-    } else if (newPass.length < 6) {
-      errs.newPass = "Minimum 6 characters";
+    } else if (newPass.length < 8) {
+      errs.newPass = "Minimum 8 characters";
     }
 
     if (!confirmPass) {
@@ -227,7 +210,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
 
       const response = await api.post("/auth/forgot-password/reset-password", {
         email: contact.trim().toLowerCase(),
-        otp: otp.join(""),
+        otp,
         password: newPass,
       });
 
@@ -240,7 +223,17 @@ const ForgotPasswordScreen = ({ navigation }) => {
     } catch (err) {
       setLoading(false);
 
-      alert(err.response?.data?.message || "Unable to reset password.");
+      const data = err.response?.data;
+      if (data?.code === "WEAK_PASSWORD") {
+        // code is still valid; let them choose another password
+        setResetErrors({ newPass: data.message });
+      } else if (data?.code === "OTP_INVALID") {
+        // code expired or burned: back to the code step
+        setOtp("");
+        setOtpError(data.message || "That code is invalid or has expired.");
+        setStep(STEP_OTP);
+      }
+      // other errors: shown by the global toast (api.js)
     }
   };
 
@@ -270,7 +263,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
 
   const stepSubtitle = {
     [STEP_EMAIL]: "Enter your registered email or mobile number.",
-    [STEP_OTP]: `We sent a 4-digit code to ${contact}.`,
+    [STEP_OTP]: `If an account exists for ${contact}, we sent a ${OTP_LENGTH}-digit code.`,
     [STEP_RESET]: "Choose a new password for your account.",
     [STEP_SUCCESS]: "Your password has been reset successfully.",
   }[step];
@@ -326,22 +319,13 @@ const ForgotPasswordScreen = ({ navigation }) => {
           {/* ── STEP 2: OTP ───────────────────────────────────────────── */}
           {step === STEP_OTP && (
             <View style={styles.form}>
-              <View style={styles.otpRow}>
-                {otp.map((digit, i) => (
-                  <TextInput
-                    key={i}
-                    ref={otpRefs[i]}
-                    style={[styles.otpBox, digit ? styles.otpBoxFilled : null]}
-                    value={digit}
-                    onChangeText={(t) => handleOtpChange(t, i)}
-                    onKeyPress={(e) => handleOtpKeyPress(e, i)}
-                    keyboardType="numeric"
-                    maxLength={1}
-                    textAlign="center"
-                    autoFocus={i === 0}
-                  />
-                ))}
-              </View>
+              <OtpCodeInput
+                value={otp}
+                onChange={(v) => {
+                  setOtp(v);
+                  setOtpError("");
+                }}
+              />
               {otpError ? (
                 <Text style={styles.errorText}>{otpError}</Text>
               ) : null}
@@ -383,7 +367,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
                   setNewPass(t);
                   setResetErrors((e) => ({ ...e, newPass: "" }));
                 }}
-                placeholder="Min. 6 characters"
+                placeholder="Min. 8 characters"
                 secureTextEntry
                 error={resetErrors.newPass}
               />
@@ -477,27 +461,6 @@ const styles = StyleSheet.create({
   form: { marginBottom: moderateScale(24) },
   btn: { marginTop: moderateScale(8) },
 
-  // OTP boxes
-  otpRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: moderateScale(8),
-  },
-  otpBox: {
-    width: 64,
-    height: 64,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    borderRadius: 10,
-    fontSize: fontScale(Typography.h2),
-    fontWeight: "700",
-    color: DARK,
-    backgroundColor: WHITE,
-  },
-  otpBoxFilled: {
-    borderColor: BLUE,
-    backgroundColor: Colors.primaryLight,
-  },
   errorText: {
     fontSize: fontScale(Typography.small),
     color: ERROR,

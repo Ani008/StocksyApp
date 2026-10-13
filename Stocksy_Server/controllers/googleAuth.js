@@ -2,6 +2,9 @@ const { OAuth2Client } = require("google-auth-library");
 const { pool } = require("../config/postgres");
 const logger = require("../utils/logger");
 const { respondWithNewSession } = require("../utils/authResponse");
+const { normalizeEmail } = require("../utils/email");
+const sessions = require("../services/sessionService");
+const otp = require("../services/otpService");
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -12,12 +15,35 @@ const getAllowedWebRedirectUris = () => {
     .filter(Boolean);
 };
 
-const createOrUpdateGoogleUser = async (payload) => {
+const googleError = (message, code, status) => {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  error.expose = true; // safe to show the person
+  return error;
+};
+
+/**
+ * Finds, links, claims or creates the Stocksy account for a verified Google
+ * identity (security review item 7).
+ *
+ *   1. Already linked to this Google identity           -> that account.
+ *   2. An account with the same email:
+ *        - tied to a DIFFERENT Google identity          -> refuse, never merge.
+ *        - email already confirmed (the owner proved it) -> link Google to it.
+ *          Its password and provider are left alone.
+ *        - email never confirmed                        -> Google just proved
+ *          the mailbox, so this account is CLAIMED: its password is removed
+ *          and every session on it revoked. Whoever created it without
+ *          owning the address (the "pre-registered a victim's email" attack)
+ *          loses their way in.
+ *   3. Nothing                                          -> create a new account.
+ */
+const createOrUpdateGoogleUser = async (payload, attempt = 0) => {
   const googleId = payload.sub;
-  const email = payload.email;
+  const email = normalizeEmail(payload.email);
   const fullName = payload.name;
   const avatar = payload.picture;
-  const emailVerified = payload.email_verified;
 
   if (!googleId || !email) {
     const error = new Error("Google account information is incomplete.");
@@ -25,82 +51,101 @@ const createOrUpdateGoogleUser = async (payload) => {
     throw error;
   }
 
-  if (!emailVerified) {
-    const error = new Error("Your Google email is not verified.");
-    error.code = "GOOGLE_EMAIL_NOT_VERIFIED";
-    error.status = 401;
-    throw error;
+  // Strictly `true`: some ID tokens carry the string "false", which is truthy.
+  if (payload.email_verified !== true && payload.email_verified !== "true") {
+    throw googleError(
+      "Your Google email is not verified.",
+      "GOOGLE_EMAIL_NOT_VERIFIED",
+      401,
+    );
   }
 
   const safeFullName = fullName?.trim() || email.split("@")[0];
   const username = safeFullName.split(/\s+/)[0];
 
-  const existing = await pool.query(
-    `
-    SELECT *
-    FROM users
-    WHERE email = $1
-    `,
-    [email],
-  );
+  try {
+    // 1. Already linked to this Google identity
+    const linked = await pool.query(`SELECT * FROM users WHERE google_id = $1`, [googleId]);
+    let user = linked.rows[0];
 
-  let user;
+    if (user) {
+      const updated = await pool.query(
+        `UPDATE users
+            SET full_name = $1, username = $2, avatar = $3
+          WHERE id = $4
+      RETURNING *`,
+        [safeFullName, username, avatar, user.id],
+      );
+      return updated.rows[0];
+    }
 
-  if (existing.rows.length > 0) {
-    user = existing.rows[0];
+    // 2. An account with this email
+    const byEmail = await pool.query(`SELECT * FROM users WHERE lower(email) = $1`, [email]);
+    user = byEmail.rows[0];
 
-    await pool.query(
-      `
-      UPDATE users
-      SET
-        full_name = $1,
-        username = $2,
-        google_id = $3,
-        provider = 'google',
-        avatar = $4
-      WHERE id = $5
-      `,
-      [safeFullName, username, googleId, avatar, user.id],
-    );
+    if (user) {
+      if (user.google_id && user.google_id !== googleId) {
+        throw googleError(
+          "This email is already linked to a different Google account.",
+          "GOOGLE_ACCOUNT_MISMATCH",
+          409,
+        );
+      }
 
-    user.full_name = safeFullName;
-    user.username = username;
-    user.google_id = googleId;
-    user.provider = "google";
-    user.avatar = avatar;
-  } else {
+      if (user.email_verified) {
+        const linkedNow = await pool.query(
+          `UPDATE users
+              SET full_name = $1, username = $2, google_id = $3, avatar = $4
+            WHERE id = $5
+        RETURNING *`,
+          [safeFullName, username, googleId, avatar, user.id],
+        );
+        return linkedNow.rows[0];
+      }
+
+      const claimed = await pool.query(
+        `UPDATE users
+            SET full_name      = $1,
+                username       = $2,
+                google_id      = $3,
+                provider       = 'google',
+                avatar         = $4,
+                password       = '',
+                email_verified = TRUE,
+                updated_at     = NOW()
+          WHERE id = $5 AND email_verified = FALSE
+      RETURNING *`,
+        [safeFullName, username, googleId, avatar, user.id],
+      );
+
+      if (claimed.rows.length === 0) {
+        // Confirmed by its owner a moment ago: start again, this time linking.
+        if (attempt < 2) return createOrUpdateGoogleUser(payload, attempt + 1);
+        throw new Error("Could not link the Google account.");
+      }
+
+      await sessions.revokeAllUserSessions(user.id, "google_claim");
+      await otp.clearCodes(user.id);
+      logger.info(`[GOOGLE AUTH] claimed an unverified account user=${user.id}`);
+      return claimed.rows[0];
+    }
+
+    // 3. New account (Google has already verified the email)
     const created = await pool.query(
-      `
-      INSERT INTO users
-      (
-        full_name,
-        username,
-        email,
-        password,
-        provider,
-        google_id,
-        avatar
-      )
-      VALUES
-      (
-        $1,
-        $2,
-        $3,
-        '',
-        'google',
-        $4,
-        $5
-      )
-      RETURNING *
-      `,
+      `INSERT INTO users
+         (full_name, username, email, password, provider, google_id, avatar, email_verified)
+       VALUES ($1, $2, $3, '', 'google', $4, $5, TRUE)
+       RETURNING *`,
       [safeFullName, username, email, googleId, avatar],
     );
-
-    user = created.rows[0];
+    return created.rows[0];
+  } catch (error) {
+    // Someone created the same account a moment ago (unique index): look again.
+    if (error.code === "23505" && attempt < 2) {
+      return createOrUpdateGoogleUser(payload, attempt + 1);
+    }
+    throw error;
   }
-
-  // The caller starts the session (utils/authResponse.js).
-  return user;
 };
 
 /**
@@ -135,10 +180,9 @@ const googleLogin = async (req, res) => {
     logger.error(`[GOOGLE AUTH] ${err.message}`);
 
     return res.status(err.status || 500).json({
-      message:
-        err.status === 401
-          ? err.message
-          : "Google authentication failed. Please try again.",
+      message: err.expose
+        ? err.message
+        : "Google authentication failed. Please try again.",
       code: err.code || "GOOGLE_AUTH_FAILED",
       severity: "error",
     });
@@ -246,10 +290,9 @@ const googleWebLogin = async (req, res) => {
     logger.error(`[GOOGLE WEB AUTH] ${err.message}`);
 
     return res.status(err.status || 500).json({
-      message:
-        err.status === 401
-          ? err.message
-          : "Google authentication failed. Please try again.",
+      message: err.expose
+        ? err.message
+        : "Google authentication failed. Please try again.",
       code: err.code || "GOOGLE_AUTH_FAILED",
       severity: "error",
     });
