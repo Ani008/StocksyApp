@@ -1,25 +1,25 @@
 import api from "./api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import marketSocket from "./marketSocket";
+import * as tokenStore from "./tokenStore";
+import { restoreSession } from "./sessionManager";
 import { disablePush, syncExistingSubscription } from "../src/pwa/push";
 
-const TOKEN_KEY = "token";
+// ─── Session helpers ──────────────────────────────────────────────────────────
+// Where the session actually lives (memory on web, secure storage on native)
+// is tokenStore.js's business; sessionManager.js refreshes it.
 
-// ─── Token helpers ────────────────────────────────────────────────────────────
+export const getStoredToken = () => tokenStore.getAccessToken();
 
-export const getStoredToken = async () => {
-  try {
-    return await AsyncStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-};
+/** App start: is there a signed-in session? (Web asks the server via the cookie.) */
+export const restoreStoredSession = restoreSession;
 
 // The shared market socket registers itself with the server as whoever was
 // logged in when it connected. Tell it whenever that changes so order
 // notifications can never go to the previous user's session.
-const storeToken = async (token) => {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
+// `data` is the login/signup response: { id, token, expiresIn, refreshToken? }.
+const storeSession = async (data) => {
+  await tokenStore.saveSession(data);
   marketSocket.resetIdentity();
   // Web push: if this browser already has a subscription, hand it to whoever
   // just signed in (no-op on native and when notifications are off).
@@ -27,8 +27,7 @@ const storeToken = async (token) => {
 };
 
 const clearToken = async () => {
-  await AsyncStorage.removeItem(TOKEN_KEY);
-  await AsyncStorage.removeItem("user");
+  await tokenStore.clearSession(); // also removes the stored "user" entry
   marketSocket.resetIdentity();
 };
 
@@ -40,7 +39,7 @@ const clearToken = async () => {
 // auth on the very next API call / app relaunch. This helper makes Google
 // auth persist through the exact same path as email/password auth.
 export const persistGoogleSession = async (data) => {
-  await storeToken(data.token);
+  await storeSession(data);
 
   await AsyncStorage.setItem(
     "user",
@@ -66,7 +65,7 @@ const signup = async ({ fullName, email, password }) => {
   // Mirror login()'s persistence — SignupPage navigates straight into
   // MainTabs after this resolves, so without storing the token/user here
   // the very first screens the person sees would have no auth session.
-  await storeToken(response.data.token);
+  await storeSession(response.data);
 
   await AsyncStorage.setItem(
     "user",
@@ -84,7 +83,7 @@ const signup = async ({ fullName, email, password }) => {
 export const login = async (email, password) => {
   const response = await api.post("/auth/login", { email, password });
 
-  await storeToken(response.data.token);
+  await storeSession(response.data);
 
   await AsyncStorage.setItem(
     "user",
@@ -104,9 +103,13 @@ export const logout = async () => {
     // While the token is still valid: stop pushing this person's alerts to
     // this browser. Web only, best effort, never blocks logging out.
     await disablePush().catch(() => {});
-    const response = await api.post("/auth/logout");
+    // Ends the session on the SERVER (revokes it, clears the web cookie, drops
+    // live sockets). Native sends its refresh token; web's rides in the cookie.
+    const refreshToken = await tokenStore.getRefreshToken();
+    const response = await api.post("/auth/logout", refreshToken ? { refreshToken } : {});
     return response.data;
   } finally {
+    // Always wipe local state, even if the server could not be reached.
     await clearToken();
   }
 };
@@ -120,7 +123,6 @@ export const deleteAccount = async (password) => {
   });
 
   await clearToken();
-  await AsyncStorage.removeItem("user");
 
   return response.data;
 };
@@ -134,6 +136,7 @@ const authService = {
   login,
   logout,
   getStoredToken,
+  restoreStoredSession,
   deleteAccount,
   persistGoogleSession,
 };

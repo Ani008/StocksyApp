@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const { pool } = require("../config/postgres");
 const sendForgotPasswordEmail = require("../utils/sendForgotPasswordEmail");
 const logger = require("../utils/logger");
+const sessions = require("../services/sessionService");
 
 // ===============================
 // Send OTP
@@ -211,6 +212,10 @@ const resetPassword = async (req, res) => {
        WHERE id = $2`,
       [hashedPassword, user.id]
     );
+
+    // A reset means the old password may have been compromised: end every
+    // existing login session (all devices) and drop their live sockets.
+    await sessions.revokeAllUserSessions(user.id, "password_reset");
 
     return res.status(200).json({
       success: true,

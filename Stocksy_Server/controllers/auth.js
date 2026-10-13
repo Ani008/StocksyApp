@@ -1,12 +1,16 @@
-const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { pool } = require("../config/postgres");
-
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
-  });
-};
+const sessions = require("../services/sessionService");
+const logger = require("../utils/logger");
+const { respondWithNewSession } = require("../utils/authResponse");
+const {
+  getAuthMode,
+  readCookie,
+  REFRESH_COOKIE,
+  setRefreshCookie,
+  clearRefreshCookie,
+} = require("../utils/authCookies");
+const { sessionExpired } = require("../utils/authErrors");
 
 const signupUser = async (req, res) => {
   console.log("\n───────────────────────────────────────");
@@ -80,19 +84,7 @@ RETURNING *
     const user = result.rows[0];
     console.log("[SIGNUP] ✅ User created:", user.id);
 
-    res.status(201).json({
-      id: user.id,
-
-      username: user.username,
-
-      fullName: user.full_name,
-
-      email: user.email,
-
-      demoBalance: user.demo_balance,
-
-      token: generateToken(user.id),
-    });
+    await respondWithNewSession(req, res, user, 201);
   } catch (error) {
     // message only — the full pg error object includes row values
     // (e.g. the email in a "duplicate key" detail).
@@ -155,19 +147,7 @@ WHERE email=$1
 
     if (isMatch) {
       console.log("[LOGIN] ✅ Login successful for:", user.username);
-      res.json({
-        id: user.id,
-
-        username: user.username,
-
-        fullName: user.full_name,
-
-        email: user.email,
-
-        demoBalance: user.demo_balance,
-
-        token: generateToken(user.id),
-      });
+      await respondWithNewSession(req, res, user);
     } else {
       console.log("[LOGIN] ❌ Password did not match");
       res.status(401).json({
@@ -186,8 +166,96 @@ WHERE email=$1
   }
 };
 
-const logoutUser = (req, res) => {
+// Where the refresh token comes from: the httpOnly cookie on the web, the
+// request body on the native app.
+const readRefreshToken = (req) =>
+  getAuthMode(req) === "cookie"
+    ? readCookie(req, REFRESH_COOKIE)
+    : typeof req.body?.refreshToken === "string"
+      ? req.body.refreshToken
+      : null;
+
+/**
+ * POST /api/auth/refresh
+ * Swaps a refresh token for a new access token and a NEW refresh token.
+ * Any failure is SESSION_EXPIRED: the client has to log in again.
+ */
+const refreshSession = async (req, res) => {
+  const mode = getAuthMode(req);
+  res.setHeader("Cache-Control", "no-store");
+
+  if (mode === "legacy") {
+    // App builds from before refresh tokens have none to send.
+    return sessionExpired(res);
+  }
+
+  try {
+    const rotated = await sessions.rotateRefreshToken(readRefreshToken(req));
+
+    if (!rotated) {
+      if (mode === "cookie") clearRefreshCookie(res);
+      return sessionExpired(res);
+    }
+
+    const body = {
+      ...rotated.user,
+      token: rotated.accessToken,
+      expiresIn: rotated.expiresIn,
+    };
+
+    if (mode === "cookie") {
+      setRefreshCookie(
+        res,
+        rotated.refreshToken,
+        rotated.refreshExpiresAt.getTime() - Date.now(),
+      );
+    } else {
+      body.refreshToken = rotated.refreshToken;
+    }
+
+    return res.status(200).json(body);
+  } catch (error) {
+    logger.error(`[REFRESH] ${error.message}`);
+    return res.status(500).json({
+      message: "Something went wrong. Please try again.",
+      code: "UNKNOWN_ERROR",
+      severity: "error",
+    });
+  }
+};
+
+/**
+ * POST /api/auth/logout
+ * Ends the session on the server. Deliberately does not require a valid
+ * access token (short-lived ones are often already expired when a person
+ * logs out) and always answers 200 so the client can finish clearing itself.
+ */
+const logoutUser = async (req, res) => {
   console.log("[LOGOUT] Request received");
+
+  try {
+    // 1. by refresh token (web cookie / native body)
+    await sessions.revokeByRefreshToken(readRefreshToken(req), "logout");
+
+    // 2. by the access token's session — covers app builds with no refresh
+    //    token. The signature is still verified; only expiry is ignored.
+    const header = req.headers.authorization || "";
+    if (header.startsWith("Bearer ")) {
+      try {
+        const decoded = sessions.verifyAccessToken(header.split(" ")[1], {
+          ignoreExpiration: true,
+        });
+        await sessions.revokeSession(decoded.sid, "logout");
+      } catch {
+        /* bad token: nothing to revoke */
+      }
+    }
+  } catch (error) {
+    logger.error(`[LOGOUT] ${error.message}`);
+  }
+
+  if (getAuthMode(req) === "cookie") clearRefreshCookie(res);
+  res.setHeader("Cache-Control", "no-store");
   res.status(200).json({ message: "Logged out successfully" });
 };
 
@@ -195,4 +263,5 @@ module.exports = {
   signupUser,
   loginUser,
   logoutUser,
+  refreshSession,
 };

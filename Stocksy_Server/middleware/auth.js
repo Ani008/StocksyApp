@@ -1,59 +1,56 @@
-const jwt = require("jsonwebtoken");
-const { pool } = require("../config/postgres");
 const logger = require("../utils/logger");
+const sessions = require("../services/sessionService");
 
-// NOTE: this still hits Postgres on every authenticated request — that's
-// the separately-scoped "stateless JWT" redesign we planned earlier and
-// haven't built yet. Deliberately not doing that rewrite here; this pass
-// only fixes the error contract and the crash bug below.
+// Still one Postgres lookup per authenticated request — but it is now a single
+// query that checks the user AND that the token's login session has not been
+// revoked, which is what makes logout / password reset / account deletion
+// actually end a session (security review item 2).
+
+const unauthorized = (res) =>
+  res.status(401).json({
+    message: "Please log in to continue.",
+    code: "UNAUTHORIZED",
+    severity: "error",
+  });
+
+const sessionExpired = (res) =>
+  res.status(401).json({
+    message: "Your session has expired. Please log in again.",
+    code: "SESSION_EXPIRED",
+    severity: "error",
+  });
 
 const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      message: "Please log in to continue.",
-      code: "UNAUTHORIZED",
-      severity: "error",
-    });
+    return unauthorized(res);
   }
 
   const token = authHeader.split(" ")[1];
 
   let decoded;
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET);
+    decoded = sessions.verifyAccessToken(token);
   } catch (err) {
-    // Token missing, malformed, or expired — this is the SESSION_EXPIRED
-    // case the frontend needs to detect and route to the full-screen
-    // re-auth flow, not a toast.
+    // Malformed, expired, or an old pre-session token. The web/native client
+    // answers SESSION_EXPIRED by trying its refresh token once, then falling
+    // back to the full-screen re-login.
     logger.error(`[AUTH] Token verification failed: ${err.message}`);
-    return res.status(401).json({
-      message: "Your session has expired. Please log in again.",
-      code: "SESSION_EXPIRED",
-      severity: "error",
-    });
+    return sessionExpired(res);
   }
 
   try {
-    const result = await pool.query(
-      `SELECT id, full_name, username, email, provider, google_id, avatar, demo_balance
-       FROM users
-       WHERE id = $1`,
-      [decoded.id],
-    );
+    const user = await sessions.findActiveUser(decoded);
 
-    if (result.rows.length === 0) {
-      // Valid token, but the user it points to no longer exists —
-      // also treated as session-expired from the client's perspective.
-      return res.status(401).json({
-        message: "Your session has expired. Please log in again.",
-        code: "SESSION_EXPIRED",
-        severity: "error",
-      });
+    if (!user) {
+      // Valid signature, but the session was revoked/expired or the user is
+      // gone — session-expired from the client's point of view.
+      return sessionExpired(res);
     }
 
-    req.user = result.rows[0];
+    req.user = user;
+    req.sessionId = decoded.sid;
     next();
   } catch (err) {
     logger.error(`[AUTH] DB lookup failed: ${err.message}`);

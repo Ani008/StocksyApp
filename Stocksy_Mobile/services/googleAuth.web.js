@@ -1,6 +1,7 @@
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import { API_BASE_URL, WEB_CLIENT_ID } from "../src/config/env";
+import { AUTH_HEADERS } from "./sessionManager";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -80,8 +81,11 @@ export const signInWithGoogle = async () => {
     `${API_BASE_URL}/auth/google/web`,
     {
       method: "POST",
+      // The server answers with the refresh token as an httpOnly cookie.
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
+        ...AUTH_HEADERS,
       },
       body: JSON.stringify({
         code,

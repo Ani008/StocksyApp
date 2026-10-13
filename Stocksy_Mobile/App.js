@@ -74,7 +74,7 @@ import ProfilePage from "./src/pages/ProfilePage";
 import { ExchangePage, MarketsPage } from "./src/pages/PlaceholderPages";
 
 // ─── Token check ──────────────────────────────────────────────────────────────
-import { getStoredToken } from "./services/authService";
+import { restoreStoredSession } from "./services/authService";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab icon map
@@ -212,8 +212,10 @@ function AppContent() {
     // resolved, so there's no extra spinner flash once the splash
     // video hands off to the real app.
     const checkToken = async () => {
-      const token = await getStoredToken();
-      setIsAuthenticated(!!token);
+      // Web: asks the server whether the httpOnly cookie still holds a live
+      // session (the access token is memory-only, so a reload loses it).
+      // Native: signed in if a stored session exists.
+      setIsAuthenticated(await restoreStoredSession());
     };
     checkToken();
   }, []);

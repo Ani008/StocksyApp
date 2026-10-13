@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:web": "expo export -p web && node scripts/stamp-sw.mjs",
-    "test": "node --test"
+    "test": "node --import ./tests/helpers/register.mjs --test"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

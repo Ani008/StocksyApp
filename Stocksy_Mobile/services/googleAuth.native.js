@@ -1,4 +1,5 @@
 import { API_BASE_URL, WEB_CLIENT_ID } from "../src/config/env";
+import { AUTH_HEADERS } from "./sessionManager";
 
 // Native (iOS/Android) Google Sign-In.
 //
@@ -101,7 +102,7 @@ export const signInWithGoogle = async () => {
 
   const res = await fetch(`${API_BASE_URL}/auth/google`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
     body: JSON.stringify({ idToken }),
   });
 

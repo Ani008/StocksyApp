@@ -81,7 +81,10 @@ function setEnv(vars) {
   };
 }
 
-const bearer = (id) => ({ Authorization: `Bearer ${jwt.sign({ id }, process.env.JWT_SECRET)}` });
+const SESSION_ID = '33333333-3333-4333-8333-333333333333';
+const bearer = (id) => ({
+  Authorization: `Bearer ${jwt.sign({ id, sid: SESSION_ID }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: 900 })}`,
+});
 const validSnapshot = { stocks: { TCS: { pe: 30 }, INFY: { pe: 25 } } };
 const post = (base, body, headers = {}) =>
   fetch(`${base}/api/fundamentals`, {

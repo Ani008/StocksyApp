@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const { pool } = require("../config/postgres");
 const { deleteAccount } = require("../repositories/accountDeletionRepository");
 const logger = require("../utils/logger");
+const sessions = require("../services/sessionService");
 
 /**
  * DELETE /api/auth/account
@@ -49,6 +50,10 @@ const deleteAccountHandler = async (req, res) => {
     }
 
     const summary = await deleteAccount(userId);
+
+    // The user row (and its auth_sessions, via ON DELETE CASCADE) is gone, so
+    // every token for it already fails. This also closes any live sockets.
+    sessions.events.emit("user-sessions-revoked", { userId: String(userId) });
 
     logger.info(`[ACCOUNT DELETED] user=${userId}`, summary);
 

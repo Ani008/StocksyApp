@@ -8,15 +8,16 @@
 // and a backgrounded native app.
 
 import { AppState, Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { WS_URL } from "../src/config/env";
 import { showToast } from "./uiBridge";
 import { createMarketSocket } from "./marketSocketCore";
+import { getUserId } from "./tokenStore";
+import { getValidAccessToken } from "./sessionManager";
 
-// Same key api.js and authService.js use. (Read directly rather than via
-// authService to avoid an import cycle: authService calls resetIdentity()).
-const TOKEN_KEY = "token";
+// Session storage and refreshing live in tokenStore.js / sessionManager.js
+// (neither imports authService, so there is no import cycle with
+// authService's resetIdentity() calls).
 
 // Only an explicit "background" counts as backgrounded. On native,
 // currentState can be null/"unknown" briefly at startup and "inactive" during
@@ -60,7 +61,11 @@ const network = hasBrowserEvents
 
 const marketSocket = createMarketSocket({
   url: WS_URL,
-  getToken: () => AsyncStorage.getItem(TOKEN_KEY),
+  // A valid (refreshed-if-needed) access token, sent as an AUTH message after
+  // connecting. Never put in the URL.
+  getToken: getValidAccessToken,
+  // Access tokens rotate every ~15 min; who is signed in does not.
+  getIdentity: getUserId,
   WebSocketImpl: WebSocket,
   appState,
   network,

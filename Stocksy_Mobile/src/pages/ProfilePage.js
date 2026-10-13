@@ -62,10 +62,17 @@ const ProfilePage = ({ navigation }) => {
     try {
       console.log("🔥 LOGOUT STARTED");
 
-      await AsyncStorage.removeItem("token");
-      await AsyncStorage.removeItem("user");
+      // Revokes the session on the server and wipes everything stored here.
+      // (It used to only delete local storage, so the old token stayed valid.)
+      try {
+        await authService.logout();
+      } catch (e) {
+        // Server unreachable: local state was still wiped (authService's
+        // finally block), so the person is logged out on this device.
+        console.log("Logout request failed:", e?.message);
+      }
 
-      console.log("✅ AsyncStorage cleared");
+      console.log("✅ Session ended");
 
       resetToLogin();
 

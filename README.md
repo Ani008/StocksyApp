@@ -63,6 +63,27 @@ INTERNAL_API_KEY=        # shared secret for backend_py -> POST /api/fundamental
 ADMIN_USER_IDS=          # comma-separated user ids allowed to see /api/revenue/*
 ```
 
+> **Web sessions, CORS and WebSocket (security step 2)** — new variables for `STOCKSY_SERVER/.env`:
+>
+> ```env
+> CORS_ORIGINS=https://app.stocksy.online        # exact origin(s) of the WEB APP, comma-separated.
+>                                                # NOT api.stocksy.online. Required in production.
+> ACCESS_TOKEN_TTL_SECONDS=900                   # optional, default 15 min
+> REFRESH_TOKEN_TTL_DAYS=30                      # optional, absolute session lifetime
+> COOKIE_SAMESITE=lax                            # lax (default) | strict | none (see below)
+> # COOKIE_DOMAIN=                               # leave unset unless you really need it
+> WS_MAX_CONNECTIONS_PER_IP=20                   # optional
+> WS_ALLOW_QUERY_TOKEN=true                      # set to false once old app builds are gone
+> LEGACY_TOKEN_TTL_SECONDS=2592000               # lifetime of tokens for old app builds; 0 = short
+> ```
+>
+> Run `migrations/014_auth_sessions.sql` once before deploying.
+> The refresh token lives in an httpOnly cookie, so the web app and the API should share a
+> registrable domain (e.g. `app.stocksy.online` + `api.stocksy.online`, keep `COOKIE_SAMESITE=lax`).
+> If the web app is on a different site (e.g. `*.pages.dev`), use `COOKIE_SAMESITE=none`.
+> Your reverse proxy must pass WebSocket `Upgrade` requests and the `Origin` header through,
+> and set `X-Forwarded-For`.
+
 > **`INTERNAL_API_KEY`** — the fundamentals scheduler (`backend_py/fundamentals.py`) sends
 > this in an `X-Internal-Key` header. If it is missing or shorter than 24 characters the
 > server rejects every `POST /api/fundamentals` (fails closed). Generate one with:

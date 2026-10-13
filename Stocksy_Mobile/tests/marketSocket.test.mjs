@@ -9,7 +9,11 @@ class FakeWS {
   constructor(url) {
     this.url = url;
     this.readyState = 0; // CONNECTING
+    this.sent = [];
     FakeWS.instances.push(this);
+  }
+  send(data) {
+    this.sent.push(JSON.parse(data));
   }
   // test controls
   serverOpen() {
@@ -33,7 +37,7 @@ const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-function makeEnv({ token = "tok1", online = true, state = "active", config } = {}) {
+function makeEnv({ token = "tok1", online = true, state = "active", config, getIdentity } = {}) {
   FakeWS.instances = [];
   mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
 
@@ -47,6 +51,7 @@ function makeEnv({ token = "tok1", online = true, state = "active", config } = {
   const sock = createMarketSocket({
     url: "wss://x.test",
     getToken: async () => tokenValue,
+    ...(getIdentity ? { getIdentity } : {}),
     WebSocketImpl: FakeWS,
     appState: {
       current: () => appStateNow,
@@ -96,7 +101,7 @@ test.afterEach(() => mock.timers.reset());
 
 // ── connection basics ────────────────────────────────────────────────────────
 
-test("does not connect until a screen attaches, then connects once with the token", async () => {
+test("does not connect until a screen attaches, then connects once", async () => {
   const env = makeEnv();
   await flush();
   assert.equal(env.count(), 0);
@@ -104,7 +109,84 @@ test("does not connect until a screen attaches, then connects once with the toke
   env.sock.attach();
   await flush();
   assert.equal(env.count(), 1);
-  assert.equal(env.ws().url, "wss://x.test?token=tok1");
+  assert.equal(env.ws().url, "wss://x.test", "the token is NOT in the URL");
+});
+
+// ── AUTH message (token never in the URL) ────────────────────────────────────
+
+test("sends the token as an AUTH message once the socket opens, not before", async () => {
+  const env = makeEnv({ token: "tok1" });
+  env.sock.attach();
+  await flush();
+  assert.deepEqual(env.ws().sent, []);
+  env.ws().serverOpen();
+  assert.deepEqual(env.ws().sent, [{ type: "AUTH", token: "tok1" }]);
+});
+
+test("anonymous connections send no AUTH", async () => {
+  const env = makeEnv({ token: null });
+  env.sock.attach();
+  await flush();
+  env.ws().serverOpen();
+  assert.deepEqual(env.ws().sent, []);
+});
+
+test("REAUTH from the server is answered with a fresh token on the same socket", async () => {
+  const env = makeEnv({ token: "tok1" });
+  env.sock.attach();
+  await flush();
+  env.ws().serverOpen();
+  const first = env.ws();
+
+  env.setToken("tok2"); // the session manager refreshed in the meantime
+  first.serverSend({ type: "REAUTH" });
+  await flush();
+
+  assert.equal(env.count(), 1, "no reconnect needed");
+  assert.deepEqual(first.sent, [
+    { type: "AUTH", token: "tok1" },
+    { type: "AUTH", token: "tok2" },
+  ]);
+});
+
+test("a rotated token for the SAME user does not force a reconnect (identity is the user, not the token)", async () => {
+  const env = makeEnv({ token: "tok1", getIdentity: async () => "user-1" });
+  env.sock.attach();
+  await flush();
+  env.ws().serverOpen();
+
+  env.setToken("tok2");
+  env.setAppState("background");
+  env.setAppState("active"); // foreground runs the identity check
+  await flush();
+  assert.equal(env.count(), 1);
+});
+
+test("server closes with 4401 (token expired): reconnects and authenticates with the refreshed token", async () => {
+  const env = makeEnv({ token: "tok1", getIdentity: async () => "user-1" });
+  env.sock.attach();
+  await flush();
+  env.ws().serverOpen();
+
+  env.setToken("tok2");
+  env.ws().serverClose();
+  await env.tick(1100);
+  assert.equal(env.count(), 2);
+  env.ws().serverOpen();
+  assert.deepEqual(env.ws().sent, [{ type: "AUTH", token: "tok2" }]);
+});
+
+test("after logout the 4401 reconnect is anonymous", async () => {
+  const env = makeEnv({ token: "tok1", getIdentity: async () => "user-1" });
+  env.sock.attach();
+  await flush();
+  env.ws().serverOpen();
+
+  env.setToken(null); // refresh was refused: signed out
+  env.ws().serverClose();
+  await env.tick(1100);
+  env.ws().serverOpen();
+  assert.deepEqual(env.ws().sent, []);
 });
 
 test("several screens share ONE socket", async () => {
@@ -447,13 +529,14 @@ test("resetIdentity() reconnects with the new user's token (never the old one)",
   env.sock.attach();
   await flush();
   env.ws().serverOpen();
-  assert.match(env.ws().url, /token=alice$/);
+  assert.deepEqual(env.ws().sent, [{ type: "AUTH", token: "alice" }]);
 
   env.setToken("bob");
   env.sock.resetIdentity();
   await flush();
   assert.equal(env.count(), 2);
-  assert.match(env.ws().url, /token=bob$/);
+  env.ws().serverOpen();
+  assert.deepEqual(env.ws().sent, [{ type: "AUTH", token: "bob" }]);
   assert.equal(FakeWS.instances[0].readyState, 3, "alice's socket is closed");
 });
 
@@ -479,7 +562,8 @@ test("logout then quick login by someone else (inside the idle grace) does not r
   env.sock.attach(); // new MainTabs mounts
   await flush();
   assert.equal(env.count(), 2);
-  assert.match(env.ws().url, /token=bob$/);
+  env.ws().serverOpen();
+  assert.deepEqual(env.ws().sent, [{ type: "AUTH", token: "bob" }]);
 });
 
 test("late events from a replaced socket are ignored", async () => {

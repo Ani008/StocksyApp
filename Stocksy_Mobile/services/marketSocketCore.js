@@ -31,6 +31,14 @@
 //     sent while disconnected are gone for good — screens must refetch.
 //   - Reconnects if the logged-in user changes, so notifications never go to
 //     the previous user's identity.
+//   - AUTH: the access token is never put in the URL (URLs end up in proxy and
+//     server logs). After the socket opens the client sends
+//     { type: "AUTH", token } as its first message. Access tokens are
+//     short-lived, so the server sends { type: "REAUTH" } shortly before the
+//     current one expires and the client answers with a fresh token.
+//     If the server closes with code 4401 (token expired / session revoked) the
+//     normal reconnect path runs and getToken() supplies a fresh token, or
+//     null once the person is signed out (anonymous price feed only).
 
 export const DEFAULTS = {
   backoffBaseMs: 1000,
@@ -50,7 +58,12 @@ const OPEN = 1;
 export function createMarketSocket(deps) {
   const {
     url: baseUrl,
+    // Must return a VALID access token, refreshing it first when needed.
     getToken,
+    // Who is signed in, independent of the token string: access tokens rotate
+    // every few minutes, but the identity only changes on login/logout.
+    // Defaults to the token itself.
+    getIdentity = getToken,
     WebSocketImpl,
     appState,
     network,
@@ -64,7 +77,7 @@ export function createMarketSocket(deps) {
   let started = false;
   let generation = 0; // bumps per connect() so stale async continuations bail out
   let attempt = 0;
-  let connectedToken; // undefined = never connected; null = anonymous
+  let connectedIdentity; // undefined = never connected; null = anonymous
   let hasOpenedBefore = false;
   let lastMessageAt = 0;
   let lastResyncAt = -Infinity;
@@ -238,8 +251,10 @@ export function createMarketSocket(deps) {
 
     const myGen = ++generation;
     let token = null;
+    let identity = null;
     try {
       token = (await getToken()) || null;
+      identity = token ? (await getIdentity()) || token : null;
     } catch (e) {
       /* storage unavailable: connect anonymously (price feed is public) */
     }
@@ -247,14 +262,11 @@ export function createMarketSocket(deps) {
     if (myGen !== generation || !shouldRun()) return;
     if (ws && (ws.readyState === OPEN || ws.readyState === CONNECTING)) return;
 
-    connectedToken = token;
-    const target = token
-      ? `${baseUrl}?token=${encodeURIComponent(token)}`
-      : baseUrl;
+    connectedIdentity = identity;
 
     let sock;
     try {
-      sock = new WebSocketImpl(target);
+      sock = new WebSocketImpl(baseUrl); // never the token: see AUTH above
     } catch (e) {
       setSnapshot({ error: "Failed to connect" });
       scheduleRetry();
@@ -270,6 +282,7 @@ export function createMarketSocket(deps) {
       const isReopen = hasOpenedBefore;
       hasOpenedBefore = true;
       setSnapshot({ isConnected: true, error: null });
+      if (token) sendAuth(sock, token);
       startWatchdog();
       // Anything pushed while we were disconnected is lost: tell screens to refetch.
       if (isReopen) emitResync("reconnected");
@@ -293,6 +306,27 @@ export function createMarketSocket(deps) {
     };
   }
 
+  function sendAuth(sock, token) {
+    try {
+      sock.send(JSON.stringify({ type: "AUTH", token }));
+    } catch (e) {
+      log("could not send AUTH", e && e.message);
+    }
+  }
+
+  // The server is about to expire this socket's token: answer with a fresh one.
+  async function reauth() {
+    const sock = ws;
+    if (!sock) return;
+    let token = null;
+    try {
+      token = (await getToken()) || null;
+    } catch (e) {
+      /* storage unavailable */
+    }
+    if (token && ws === sock && sock.readyState === OPEN) sendAuth(sock, token);
+  }
+
   function handleMessage(raw) {
     let msg;
     try {
@@ -304,6 +338,11 @@ export function createMarketSocket(deps) {
 
     if (msg.error) {
       setSnapshot({ error: msg.error });
+      return;
+    }
+
+    if (msg.type === "REAUTH") {
+      reauth();
       return;
     }
 
@@ -410,13 +449,13 @@ export function createMarketSocket(deps) {
   }
 
   async function ensureIdentity() {
-    let token = null;
+    let identity = null;
     try {
-      token = (await getToken()) || null;
+      identity = (await getIdentity()) || null;
     } catch (e) {
       /* ignore */
     }
-    if (ws && connectedToken !== undefined && token !== connectedToken) {
+    if (ws && connectedIdentity !== undefined && identity !== connectedIdentity) {
       forceReconnect("identity changed");
     }
   }
@@ -438,7 +477,7 @@ export function createMarketSocket(deps) {
     clearRetry();
     closeSocket();
     hasOpenedBefore = false;
-    connectedToken = undefined;
+    connectedIdentity = undefined;
     attempt = 0;
     hiddenAt = null;
   }

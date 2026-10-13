@@ -1,7 +1,8 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {API_BASE_URL, API_TIMEOUT} from "../src/config/env";
 import { showToast, triggerSessionExpired } from './uiBridge';
+import * as tokenStore from './tokenStore';
+import { AUTH_HEADERS, refreshSession } from './sessionManager';
 
 // SECURITY: request/response logging is dev-only. In a production web build
 // (__DEV__ === false) nothing is printed, so request URLs, server responses
@@ -15,16 +16,26 @@ debugLog('[api.js] API_BASE_URL:', API_BASE_URL);
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: API_TIMEOUT,
+  // The web build needs the browser to send/accept the httpOnly refresh
+  // cookie on calls to the API; native has no cookie jar to use.
+  withCredentials: tokenStore.IS_WEB,
   headers: {
     "Content-Type": "application/json",
+    ...AUTH_HEADERS,
   },
 });
 
-// ─── Request interceptor — attach JWT token from AsyncStorage ─────────────────
+// The auth endpoints manage the session themselves — never "refresh and retry"
+// a failed login or a failed refresh.
+const isAuthEndpoint = (url = '') =>
+  /^\/?auth\/(login|signup|refresh|logout|google)/.test(url);
+
+// ─── Request interceptor — attach the access token ────────────────────────────
+// (in memory on web, AsyncStorage on native: see tokenStore.js)
 api.interceptors.request.use(
   async (config) => {
     try {
-      const token = await AsyncStorage.getItem('token');
+      const token = await tokenStore.getAccessToken();
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
         debugLog(`[API ➡️ ] ${config.method?.toUpperCase()} ${config.baseURL}${config.url} — token attached ✅`);
@@ -32,7 +43,7 @@ api.interceptors.request.use(
         debugLog(`[API ➡️ ] ${config.method?.toUpperCase()} ${config.baseURL}${config.url} — no token`);
       }
     } catch (e) {
-      debugLog('[API ➡️ ] Could not read token from AsyncStorage:', e.message);
+      debugLog('[API ➡️ ] Could not read the access token:', e.message);
     }
     return config;
   },
@@ -48,18 +59,50 @@ api.interceptors.response.use(
     debugLog(`[API ✅] ${response.status} ${response.config.url}`);
     return response;
   },
-  (error) => {
+  async (error) => {
     if (error.response) {
       debugLog(`[API ❌] ${error.response.status} ${error.config?.url}`);
-      debugLog('[API ❌] Response data:', JSON.stringify(error.response.data));
 
       const { message, code, severity } = error.response.data || {};
+      const original = error.config;
+
+      // Access tokens are short-lived: on SESSION_EXPIRED first try to swap the
+      // refresh token for a new one and replay the request ONCE. Only if that
+      // is refused does the person see the full-screen re-login.
+      if (
+        code === 'SESSION_EXPIRED' &&
+        original &&
+        !original._retried &&
+        !isAuthEndpoint(original.url)
+      ) {
+        original._retried = true;
+
+        const sentToken = String(original.headers?.Authorization || '').replace('Bearer ', '');
+        const currentToken = await tokenStore.getAccessToken();
+
+        try {
+          // Another request may already have refreshed while this one was in
+          // flight: then just replay with the newer token.
+          const session = currentToken && currentToken !== sentToken
+            ? { token: currentToken }
+            : await refreshSession();
+
+          if (session) {
+            original.headers.Authorization = `Bearer ${session.token}`;
+            return api(original);
+          }
+          // refused: fall through to the re-login screen below
+        } catch (refreshError) {
+          // Could not reach the server to refresh: keep the session.
+          showToast('No connection to the server. Check your network.', 'error');
+          return Promise.reject(error);
+        }
+      }
 
       if (code === 'SESSION_EXPIRED') {
         // Full-screen re-auth, not a toast — a toast that disappears
         // while the user is still stuck isn't useful here.
-        AsyncStorage.removeItem('token');
-        AsyncStorage.removeItem('user');
+        await tokenStore.clearSession();
         triggerSessionExpired();
       } else if (code === 'MARKET_CLOSED') {
         // Intentionally no toast here. This has a rich payload
