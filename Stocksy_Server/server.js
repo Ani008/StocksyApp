@@ -11,11 +11,18 @@ require("./config/postgres");
 const { initWebSocket } = require("./services/websocketService");
 const { scheduleAlertWatcher } = require("./services/alertWatcherService");
 const { generalLimiter } = require("./middleware/rateLimiter");
+const { securityHeaders } = require("./middleware/securityHeaders");
 
 const app = express();
 app.set('trust proxy', 1); //for server production server 
 
 const server = http.createServer(app);
+
+// Security headers (CSP, HSTS, nosniff, anti-framing, Referrer-Policy,
+// Permissions-Policy, no-store). FIRST in the stack so that 404s, CORS
+// preflights, rate-limit rejections and error responses all carry them.
+// See middleware/securityHeaders.js.
+app.use(...securityHeaders());
 
 // CORS: only the web app's own origin(s) may call this API from a browser.
 // Set CORS_ORIGINS (comma-separated) in .env — see config/cors.js. In

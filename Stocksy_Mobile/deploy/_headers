@@ -1,0 +1,24 @@
+# Same policy as nginx-security-headers.conf, for Netlify / Cloudflare Pages.
+# Not needed on nginx. To use it, copy it into the build output:
+#     cp deploy/_headers dist/_headers      (add to the build step on your host)
+# Keep the CSP identical to nginx-security-headers.conf (tests/csp.test.mjs
+# fails if they drift apart).
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.logo.dev https://imgs.search.brave.com https://tradebrains-wp.s3.ap-south-1.amazonaws.com; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://api.stocksy.online wss://api.stocksy.online; worker-src 'self'; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin
+  Permissions-Policy: accelerometer=(), bluetooth=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Resource-Policy: same-site
+
+/sw.js
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/_expo/static/*
+  Cache-Control: public, max-age=31536000, immutable
