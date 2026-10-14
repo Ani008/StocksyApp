@@ -86,6 +86,7 @@ app.use("/api/revenue", require("./routes/revenue")); // admin only — see rout
 app.use("/api", require("./routes/orders"));
 app.use("/api/journal", require("./routes/journal"));
 app.use("/api/alerts", require("./routes/alerts"));
+app.use("/api/watchlists", require("./routes/watchlists"));
 app.use("/api/push", require("./routes/push"));
 app.use("/api/app", require("./routes/appVersion"));   // <-- add this
 

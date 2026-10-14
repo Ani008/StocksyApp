@@ -440,20 +440,33 @@ export default function PortfolioPage({ navigation }) {
 
       {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + moderateScale(8) }]}>
-        <TouchableOpacity
-          style={styles.journalBtn}
-          onPress={() => navigation.navigate('Journal')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="bulb-outline" size={moderateScale(20)} color={Colors.white} />
-        </TouchableOpacity>
+        {/* Both side groups share one width so the title stays centred. */}
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            style={styles.journalBtn}
+            onPress={() => navigation.navigate('Journal')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="bulb-outline" size={moderateScale(20)} color={Colors.white} />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.headerTitle}>Portfolio</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => navigation.navigate('Wallet')}
-        >
-          <Ionicons name="add" size={moderateScale(22)} color={Colors.white} />
-        </TouchableOpacity>
+        <View style={[styles.headerSide, styles.headerSideRight]}>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => navigation.navigate('Watchlist')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Watchlists"
+          >
+            <Ionicons name="bookmark-outline" size={moderateScale(20)} color={Colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => navigation.navigate('Wallet')}
+          >
+            <Ionicons name="add" size={moderateScale(22)} color={Colors.white} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Holdings / Positions toggle ── */}
@@ -705,6 +718,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.white,
     letterSpacing: 0.2,
+  },
+  headerSide: {
+    width: moderateScale(84),
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerSideRight: {
+    justifyContent: 'flex-end',
+    gap: moderateScale(8),
   },
   addBtn: {
     width: moderateScale(36), height: moderateScale(36), borderRadius: moderateScale(18),
