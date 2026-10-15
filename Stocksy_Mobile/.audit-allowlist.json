@@ -1,0 +1,29 @@
+{
+  "_readme": "Advisories we have looked at and accepted. `npm run audit:gate` (and CI) fails on any advisory NOT listed here, and on any entry whose reviewBy date has passed, so nothing stays accepted by accident. Remove an entry as soon as the fix lands. Last reviewed 2026-10-15 (security review item 14).",
+  "advisories": [
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "reason": "Build tooling only (Metro/Expo CLI file globbing on the developer/CI machine). Verified NOT in the shipped web bundle (source-map check). No patched release exists: 3.0.3 is the latest.",
+      "reviewBy": "2027-01-15"
+    },
+    {
+      "id": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge",
+      "reason": "Build tooling only (@expo/code-signing-certificates inside Expo CLI). Verified NOT in the shipped web bundle. No patched release exists: 1.4.0 is the latest.",
+      "reviewBy": "2027-01-15"
+    },
+    {
+      "id": "GHSA-w5hq-g745-h8pq",
+      "package": "uuid",
+      "reason": "Build tooling only (uuid 7 pulled in by Expo config plugins). Not in the shipped bundle. Only affects v3/v5/v6 called with a caller-supplied buffer, which none of the callers do.",
+      "reviewBy": "2027-01-15"
+    },
+    {
+      "id": "GHSA-vcc3-ghjq-m6fr",
+      "package": "decode-uri-component",
+      "reason": "SHIPS in the web bundle via @react-navigation/core -> query-string, but is not reachable: the app's NavigationContainer has no `linking` prop, so React Navigation never parses query strings from the address bar. A patched 0.5.0 exists but is ESM-only and breaks query-string 7 (tested: 'decodeComponent is not a function'), so an override is not safe. Real fix = upgrade to React Navigation 7 (major migration). If URL linking is ever enabled, this MUST be resolved first.",
+      "reviewBy": "2027-01-15"
+    }
+  ]
+}

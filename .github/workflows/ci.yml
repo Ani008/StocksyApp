@@ -1,0 +1,85 @@
+# CI: tests + dependency audit for both projects (security review item 14).
+#
+# The audit steps also run every Monday even when nobody has pushed, because
+# new advisories appear against OLD code. A red Monday run means "a dependency
+# got a new advisory", not "something you changed broke".
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server (tests + audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Stocksy_Server
+    services:
+      # The order/idempotency and account-security tests run against a real
+      # Postgres (each builds and drops its own throw-away schema).
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stocksy_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/stocksy_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Stocksy_Server/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # Any advisory in any dependency fails this step (the server is at 0).
+      - name: npm audit
+        run: npm audit --audit-level=low
+
+  mobile:
+    name: Mobile/web (tests + audit + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Stocksy_Mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Stocksy_Mobile/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # Fails on any NEW advisory, or an accepted one past its review date.
+      # See Stocksy_Mobile/.audit-allowlist.json for what is accepted and why.
+      - name: Dependency audit gate
+        run: npm run audit:gate
+      # Catches a dependency change that breaks the production web bundle.
+      - name: Build web bundle
+        run: |
+          cp .env.production.example .env.production
+          npm run build:web
