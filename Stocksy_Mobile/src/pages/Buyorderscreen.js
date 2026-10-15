@@ -25,6 +25,7 @@ import SlideToConfirmButton from "../components/SlideToConfirmButton";
 import { walletService } from "../../services/walletService";
 import { fetchWallets, createWallet } from "../../services/walletService";
 import { placeOrder } from "../../services/orderService";
+import { createOrderAttempt, isAmbiguousFailure } from "../../services/idempotency";
 import { showToast } from "../../services/uiBridge";
 import { fetchLeverage } from "../../services/leverageService";
 import { fetchMarketStatus } from "../../services/marketService";
@@ -72,6 +73,13 @@ export default function BuyOrderScreen({ navigation, route }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [creatingWallet, setCreatingWallet] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
+  // Duplicate-order protection (security review item 13). `orderAttempt` holds
+  // ONE idempotency key for the order being placed, kept across retries of the
+  // same order so the server never places it twice. `submittingRef` is a
+  // synchronous guard: setPlacingOrder() is async, so two quick taps could
+  // both get past `canPlace` before the button disables.
+  const orderAttempt = useRef(createOrderAttempt()).current;
+  const submittingRef = useRef(false);
 
   // ─── Market status ───────────────────────────────────────────────────────────
   // Optimistic isOpen:true until the first fetch resolves, so the screen
@@ -229,12 +237,11 @@ export default function BuyOrderScreen({ navigation, route }) {
       setModalVisible(true);
       return;
     }
-    if (!canPlace) return;
+    if (!canPlace || submittingRef.current) return;
+    submittingRef.current = true;
     setPlacingOrder(true);
     try {
-      // TODO: wire to your order API when ready
-      // await orderService.placeOrder({ instrumentKey, symbol, qty: qtyNum, price: effectivePrice, tradeType, orderType, walletId: selectedWalletId });
-      await placeOrder({
+      const payload = {
         instrument_key: instrumentKey,
         symbol,
         quantity: qtyNum,
@@ -243,7 +250,11 @@ export default function BuyOrderScreen({ navigation, route }) {
         side: orderType,
         wallet_id: selectedWalletId,
         product_type: productType,
-      });
+      };
+      // Same key for retries of this same order -> the server returns the
+      // order it already placed instead of placing a second one.
+      await placeOrder(payload, { idempotencyKey: orderAttempt.keyFor(payload) });
+      orderAttempt.succeeded();
       navigation.replace("OrderSuccess", {
         symbol,
         orderType,
@@ -254,6 +265,15 @@ export default function BuyOrderScreen({ navigation, route }) {
         walletName: selectedWallet?.name,
       });
     } catch (e) {
+      // Keeps the key if we can't tell whether the order was placed (timeout,
+      // dropped connection, 5xx); drops it after a definite rejection.
+      orderAttempt.failed(e);
+      if (isAmbiguousFailure(e)) {
+        showToast(
+          "Couldn't confirm your order. Tap again to retry: it won't be placed twice.",
+          "error",
+        );
+      }
       const data = e?.response?.data;
       if (data?.code === "MARKET_CLOSED") {
         // Server is the source of truth — sync local state from its
@@ -270,6 +290,7 @@ export default function BuyOrderScreen({ navigation, route }) {
       // Other errors (INSUFFICIENT_FUNDS, holdings, etc.) already covered
       // by the global toast via the api.js interceptor.
     } finally {
+      submittingRef.current = false;
       setPlacingOrder(false);
     }
   }

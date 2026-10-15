@@ -15,6 +15,7 @@ import {
 import Modal from "./AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { placeOrder, cancelOrder, fetchOrders } from "../../services/orderService";
+import { createOrderAttempt, isAmbiguousFailure } from "../../services/idempotency";
 
 // ─── Theme tokens — matches PortfolioPage.js's `C` palette so this view sits
 // naturally alongside the rest of the (light) app instead of standing out as
@@ -160,6 +161,12 @@ function PositionRow({ position, onPress, onSetStopLoss, onRemoveStopLoss }) {
 function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced }) {
   const [trigger, setTrigger] = useState("");
   const [placing, setPlacing] = useState(false);
+  // Duplicate-order protection (security review item 13): one idempotency key
+  // for the stop-loss being set, kept across retries so a lost response or a
+  // double tap can never create two resting SL orders. (Must stay above the
+  // `if (!position) return null` below: hooks cannot be called conditionally.)
+  const slAttempt = useRef(createOrderAttempt()).current;
+  const submittingRef = useRef(false);
 
   // Pre-fill (or reset) the input whenever a different position/order opens
   // in the modal — a plain useState default won't pick up prop changes on
@@ -212,15 +219,19 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
       }
     }
 
+    if (submittingRef.current) return; // synchronous double-tap guard
+    submittingRef.current = true;
     setPlacing(true);
     try {
       // Cancel-then-replace: remove the old resting SL first so there's
       // never a window with two SL orders guarding the same position.
+      // (Cancelling an already-cancelled order succeeds on the server, so a
+      // retry after a lost response gets past this step instead of failing.)
       if (isEditing) {
         await cancelOrder(existingOrder.id);
       }
 
-      await placeOrder({
+      const payload = {
         wallet_id: position.wallet_id,
         instrument_key: position.instrument_key,
         symbol: position.symbol,
@@ -231,16 +242,23 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
         trigger_price: triggerNum,
         product_type: position.product_type,
         metadata: { reason: "MANUAL_STOP_LOSS" },
-      });
+      };
+      await placeOrder(payload, { idempotencyKey: slAttempt.keyFor(payload) });
+      slAttempt.succeeded();
 
       setTrigger("");
       onPlaced?.(isEditing ? "updated" : "placed");
     } catch (err) {
+      slAttempt.failed(err);
+      const unsure = isAmbiguousFailure(err);
       Alert.alert(
         isEditing ? "Couldn't update stop-loss" : "Couldn't place stop-loss",
-        err?.response?.data?.message || err?.message || "Something went wrong.",
+        unsure
+          ? "We couldn't confirm whether it went through. Tap again to retry: it won't be set twice."
+          : err?.response?.data?.message || err?.message || "Something went wrong.",
       );
     } finally {
+      submittingRef.current = false;
       setPlacing(false);
     }
   };
@@ -429,12 +447,22 @@ export default function IntradayPositionsView({
     );
   };
 
+  // Duplicate-order protection (security review item 13): one idempotency key
+  // per position being exited, kept if the outcome was unknown (timeout, 5xx)
+  // so tapping "Exit all" again can never close a position twice.
+  const exitAttempts = useRef({});
+  const exitingRef = useRef(false);
+
   const runExitAll = async () => {
+    if (exitingRef.current) return; // synchronous double-tap guard
+    exitingRef.current = true;
     setExiting(true);
     const results = await Promise.allSettled(
-      positions.map((pos) => {
+      positions.map(async (pos) => {
         const isShort = (pos.isShort ?? pos.qty < 0);
-        return placeOrder({
+        const slot = `${pos.wallet_id}:${pos.instrument_key}`;
+        const attempt = (exitAttempts.current[slot] ??= createOrderAttempt());
+        const payload = {
           wallet_id: pos.wallet_id,
           instrument_key: pos.instrument_key,
           symbol: pos.symbol,
@@ -445,11 +473,20 @@ export default function IntradayPositionsView({
           quantity: Math.abs(pos.qty),
           product_type: "MIS",
           metadata: { reason: "MANUAL_EXIT_ALL" },
-        });
+        };
+        try {
+          const res = await placeOrder(payload, { idempotencyKey: attempt.keyFor(payload) });
+          attempt.succeeded();
+          return res;
+        } catch (err) {
+          attempt.failed(err);
+          throw err;
+        }
       }),
     );
 
     const failed = results.filter((r) => r.status === "rejected");
+    exitingRef.current = false;
     setExiting(false);
     onExited?.();
 

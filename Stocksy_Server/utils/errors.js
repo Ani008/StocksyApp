@@ -29,6 +29,14 @@ class NotFoundError extends Error {
 class UnauthorizedError extends Error {
   constructor(message) { super(message || 'Not authorized'); this.name = 'UnauthorizedError'; }
 }
+class IdempotencyConflictError extends Error {
+  // The same Idempotency-Key was reused for a DIFFERENT order than the one it
+  // first created. Never silently place or replay anything in that case.
+  constructor() {
+    super('This idempotency key was already used for a different order. Generate a new key for a new order.');
+    this.name = 'IdempotencyConflictError';
+  }
+}
 class SessionExpiredError extends Error {
   constructor() { super('Your session has expired'); this.name = 'SessionExpiredError'; }
 }
@@ -75,6 +83,9 @@ function mapErrorToResponse(err) {
   if (err instanceof SessionExpiredError)
     return { status: 401, body: { message: err.message, code: 'SESSION_EXPIRED', severity: 'error' } };
 
+  if (err instanceof IdempotencyConflictError)
+    return { status: 422, body: { message: err.message, code: 'IDEMPOTENCY_KEY_REUSED', severity: 'error' } };
+
   // Unclassified — never forward err.message to the client here.
   return { status: 500, body: { message: 'Something went wrong. Please try again.', code: 'UNKNOWN_ERROR', severity: 'error' } };
 }
@@ -99,6 +110,7 @@ module.exports = {
   NotFoundError,
   UnauthorizedError,
   SessionExpiredError,
+  IdempotencyConflictError,
   mapErrorToResponse,
   sendError,
 };

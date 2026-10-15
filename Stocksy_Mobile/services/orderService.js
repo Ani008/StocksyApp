@@ -1,7 +1,17 @@
 import api from "./api";
 
-export async function placeOrder(payload) {
-  const response = await api.post("/orders", payload);
+/**
+ * Place an order. POST /api/orders
+ *
+ * Pass `idempotencyKey` (see services/idempotency.js) on every call: if the
+ * same key reaches the server twice - a retry after a timeout, a double tap -
+ * the server returns the order it already placed instead of placing another.
+ * Orders sent without a key still work but get no such protection.
+ */
+export async function placeOrder(payload, { idempotencyKey } = {}) {
+  const response = await api.post("/orders", payload, {
+    headers: idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : undefined,
+  });
   return response.data;
 }
 

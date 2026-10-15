@@ -1,6 +1,7 @@
 const { placeOrder, cancelOrder, getOrders } = require('../services/orderService');
 const { getPositions, getPortfolioSummary, getTrades } = require('../services/positionService');
 const { sendError } = require('../utils/errors');
+const { readIdempotencyKey } = require('../utils/idempotency');
 const logger = require('../utils/logger');
 
 // ── POST /api/orders ──────────────────────────────────────────────────────────
@@ -11,7 +12,17 @@ async function createOrder(req, res) {
 
     if (!wallet_id) return res.status(400).json({ message: 'wallet_id is required', code: 'VALIDATION_ERROR', severity: 'error' });
 
-    const order = await placeOrder(userId, wallet_id, orderPayload);
+    // Idempotency-Key (security review item 13): a retry / double tap of the
+    // same order returns the original order instead of placing a second one.
+    const idempotencyKey = readIdempotencyKey(req);
+    let replayed = false;
+
+    const order = await placeOrder(userId, wallet_id, orderPayload, {
+      idempotencyKey,
+      onReplay: () => { replayed = true; },
+    });
+
+    if (replayed) res.set('Idempotent-Replayed', 'true');
     return res.status(201).json({
       message: 'Order placed successfully',
       order: sanitiseOrder(order),
@@ -27,7 +38,10 @@ async function listOrders(req, res) {
     const userId = req.user.id;
     const { wallet_id, status, limit = 20, offset = 0 } = req.query;
     const orders = await getOrders(userId, { walletId: wallet_id, status, limit: +limit, offset: +offset });
-    return res.json({ orders });
+    // idempotency_key / request_hash are internal bookkeeping, not API fields.
+    return res.json({
+      orders: orders.map(({ idempotency_key, request_hash, ...o }) => o),
+    });
   } catch (err) {
     return sendError(res, err, logger);
   }
@@ -81,7 +95,7 @@ async function getTradesHandler(req, res) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function sanitiseOrder(order) {
   // Strip internal fields from API response
-  const { metadata, ...rest } = order;
+  const { metadata, idempotency_key, request_hash, ...rest } = order;
   return rest;
 }
 

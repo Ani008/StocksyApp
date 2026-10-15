@@ -25,7 +25,13 @@ const asyncStorage = {
   removeItem: async (k) => void state.asyncStore.delete(k),
   multiRemove: async (ks) => ks.forEach((k) => state.asyncStore.delete(k)),
 };
-export default mode === "async" ? asyncStorage : { post: (...a) => axiosPost(...a) };
+// ./api stand-in (mode "api"): records the call, answers via state.responder
+const apiStub = {
+  post: (...a) => axiosPost(...a),
+  get: async (url, config) => { state.posts.push({ method: "get", url, config }); return state.responder(url, undefined, config); },
+  delete: async (url, config) => { state.posts.push({ method: "delete", url, config }); return state.responder(url, undefined, config); },
+};
+export default mode === "async" ? asyncStorage : mode === "api" ? apiStub : { post: (...a) => axiosPost(...a) };
 
 export const getItemAsync = async (k) => state.secureStore.get(k) ?? null;
 export const setItemAsync = async (k, v) => void state.secureStore.set(k, v);

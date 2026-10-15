@@ -16,8 +16,10 @@ const {
   ValidationError,
   InsufficientFundsError,
   MarketClosedError,
-  NotFoundError
+  NotFoundError,
+  IdempotencyConflictError
 } = require('../utils/errors');
+const { fingerprintOrder } = require('../utils/idempotency');
 
 const logger = require('../utils/logger');
 const { calculateCharges } = require('../utils/feeCalculator');
@@ -183,7 +185,38 @@ function validateTriggerDirection(order_type, side, trigger_price, ltp) {
 // Place Order
 // ─────────────────────────────────────────────────────────────
 
-async function placeOrder(userId, walletId, payload) {
+// ── Idempotency helpers (security review item 13) ───────────────────────────
+// `db` is a pg Pool or a checked-out client, so the same lookup can run both
+// outside and inside the placing transaction.
+const IDEMPOTENCY_INDEX = 'uq_orders_user_idempotency';
+
+async function findOrderByIdempotencyKey(db, userId, key) {
+  const { rows } = await db.query(
+    `SELECT * FROM orders WHERE user_id = $1 AND idempotency_key = $2`,
+    [userId, key]
+  );
+  return rows[0] || null;
+}
+
+// Same key + same order  -> hand back the order we already created.
+// Same key + other order -> refuse; never guess which one the client meant.
+function resolveReplay(existing, requestHash) {
+  if (existing.request_hash && existing.request_hash !== requestHash) {
+    throw new IdempotencyConflictError();
+  }
+  return existing;
+}
+
+/**
+ * @param {string} userId
+ * @param {string} walletId
+ * @param {object} payload
+ * @param {object} [opts]
+ * @param {string|null} [opts.idempotencyKey] client-supplied key (already validated)
+ * @param {Function}    [opts.onReplay]       called (with the order) when an existing
+ *                                            order is returned instead of a new one
+ */
+async function placeOrder(userId, walletId, payload, { idempotencyKey = null, onReplay } = {}) {
   const {
     instrument_key,
     symbol,
@@ -196,6 +229,22 @@ async function placeOrder(userId, walletId, payload) {
     product_type = 'CNC',
     metadata = {}
   } = payload;
+
+  // 0. Idempotency: have we already placed this exact order? Checked BEFORE
+  // validation and the market-hours check on purpose: a retry that arrives a
+  // moment after the market closes must still get back the order that was
+  // placed, not a misleading "market closed" for an order that exists.
+  const requestHash = idempotencyKey ? fingerprintOrder(walletId, payload) : null;
+
+  if (idempotencyKey) {
+    const existing = await findOrderByIdempotencyKey(pool, userId, idempotencyKey);
+    if (existing) {
+      const replayed = resolveReplay(existing, requestHash);
+      logger.info(`Order replayed (idempotent): ${replayed.id}`);
+      if (onReplay) onReplay(replayed);
+      return replayed;
+    }
+  }
 
   // 1. Validate input
   validateOrderInput({
@@ -280,6 +329,22 @@ async function placeOrder(userId, walletId, payload) {
     }
 
     const wallet = walletRes.rows[0];
+
+    // 4b. Idempotency, again, now that we hold the wallet lock. Two identical
+    // requests that arrive at the same instant both pass check 0 above; the
+    // wallet lock makes the second one wait here until the first commits, and
+    // this re-check then finds the first one's order. Nothing has been written
+    // yet, so there is nothing to undo.
+    if (idempotencyKey) {
+      const existing = await findOrderByIdempotencyKey(client, userId, idempotencyKey);
+      if (existing) {
+        const replayed = resolveReplay(existing, requestHash);
+        await client.query('ROLLBACK');
+        logger.info(`Order replayed (idempotent, concurrent): ${replayed.id}`);
+        if (onReplay) onReplay(replayed);
+        return replayed;
+      }
+    }
 
     // 5. Lock existing position (if any) — needed to work out how much of
     // this order is "covering" an opposite existing position (needs no
@@ -432,13 +497,15 @@ async function placeOrder(userId, walletId, payload) {
         product_type,
         leverage_applied,
         metadata,
-        position_id
+        position_id,
+        idempotency_key,
+        request_hash
       )
       VALUES
       (
         $1,$2,$3,$4,$5,
         $6,$7,$8,$9,$10,
-        'PENDING',$11,$12,$13,$14,$15
+        'PENDING',$11,$12,$13,$14,$15,$16,$17
       )
       RETURNING *
       `,
@@ -457,7 +524,9 @@ async function placeOrder(userId, walletId, payload) {
         product_type,
         leverage,
         JSON.stringify(metadata),
-        linkedPositionId
+        linkedPositionId,
+        idempotencyKey,
+        requestHash
       ]
     );
 
@@ -533,6 +602,24 @@ async function placeOrder(userId, walletId, payload) {
 
   } catch (err) {
     await client.query('ROLLBACK');
+
+    // Last line of defence: a simultaneous duplicate that slipped past both
+    // checks is stopped by the unique index. Everything this attempt did
+    // (margin reserve, insert) was just rolled back; return the winner's order.
+    if (
+      idempotencyKey &&
+      err.code === '23505' &&
+      err.constraint === IDEMPOTENCY_INDEX
+    ) {
+      const existing = await findOrderByIdempotencyKey(client, userId, idempotencyKey);
+      if (existing) {
+        const replayed = resolveReplay(existing, requestHash);
+        logger.info(`Order replayed (idempotent, unique-index): ${replayed.id}`);
+        if (onReplay) onReplay(replayed);
+        return replayed;
+      }
+    }
+
     throw err;
   } finally {
     client.release();
@@ -565,6 +652,16 @@ async function cancelOrder(userId, orderId) {
     }
 
     const order = res.rows[0];
+
+    // Idempotent cancel: a retried / double-tapped cancel of an order that is
+    // already cancelled is a success, not an error. (Without this, a retry
+    // after a lost response would show "Cannot cancel order with status
+    // CANCELLED" for a cancel that actually worked - and it would abort the
+    // cancel-then-replace stop-loss edit half way.) Nothing is refunded twice.
+    if (order.status === 'CANCELLED') {
+      await client.query('ROLLBACK');
+      return { success: true, orderId, alreadyCancelled: true };
+    }
 
     if (!['PENDING', 'OPEN'].includes(order.status)) {
       throw new ValidationError(
