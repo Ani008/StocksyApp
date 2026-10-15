@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,8 @@ import useHistoricalData from "../hooks/useHistoricalData";
 import ChartView from "../components/ChartView";
 import useFundamentals from "../hooks/useFundamentals";
 import SetAlertModal from "../components/SetAlertModal";
+import AddToWatchlistModal from "../components/AddToWatchlistModal";
+import watchlistService from "../../services/watchlistService";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -54,6 +56,24 @@ const StockDetailPage = ({ navigation, route }) => {
 
   const [activeRange, setActiveRange] = useState("1M");
   const [alertModalVisible, setAlertModalVisible] = useState(false);
+  const [watchlistModalVisible, setWatchlistModalVisible] = useState(false);
+  // Filled bookmark when this stock is in at least one of the user's watchlists.
+  const [inWatchlist, setInWatchlist] = useState(false);
+
+  const refreshInWatchlist = useCallback(async () => {
+    try {
+      const lists = await watchlistService.getWatchlists();
+      setInWatchlist(
+        lists.some((l) => l.items.some((i) => i.instrument_key === instrumentKey)),
+      );
+    } catch (err) {
+      // Not critical — the bookmark just stays outlined. Toast already shown.
+    }
+  }, [instrumentKey]);
+
+  useEffect(() => {
+    refreshInWatchlist();
+  }, [refreshInWatchlist]);
 
   const { prices, isConnected } = useMarketData();
   const {
@@ -166,15 +186,14 @@ const StockDetailPage = ({ navigation, route }) => {
         </Text>
 
         <TouchableOpacity
-          onPress={() =>
-            navigation.navigate("SupplyChain", { symbol, name })
-          }
+          onPress={() => setWatchlistModalVisible(true)}
           style={styles.alertBtn}
+          accessibilityLabel="Add to watchlist"
         >
           <Ionicons
-            name="git-network-outline"
+            name={inWatchlist ? "bookmark" : "bookmark-outline"}
             size={moderateScale(20)}
-            color={Colors.text}
+            color={inWatchlist ? Colors.primary : Colors.text}
           />
         </TouchableOpacity>
 
@@ -687,6 +706,14 @@ const StockDetailPage = ({ navigation, route }) => {
         symbol={symbol}
         name={name}
         ltp={ltp}
+      />
+
+      <AddToWatchlistModal
+        visible={watchlistModalVisible}
+        onClose={() => setWatchlistModalVisible(false)}
+        instrumentKey={instrumentKey}
+        symbol={symbol}
+        onChanged={refreshInWatchlist}
       />
     </SafeAreaView>
   );
