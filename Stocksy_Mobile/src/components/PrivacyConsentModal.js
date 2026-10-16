@@ -6,7 +6,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 import { showToast } from "../../services/uiBridge";
 
-const PRIVACY_URL = "https://www.stocksy.online/";
+// The landing page now lives at the site root; the policy is at /privacy.
+const PRIVACY_URL = "https://www.stocksy.online/privacy";
 
 /**
  * PrivacyConsentModal

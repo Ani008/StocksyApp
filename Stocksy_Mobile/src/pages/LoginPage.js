@@ -13,6 +13,7 @@ import {
 import Svg, { G, Path } from "react-native-svg";
 import Button from "../components/Button";
 import Input from "../components/Input";
+import StoreNotice from "../components/StoreNotice";
 import authService from "../../services/authService";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -113,6 +114,9 @@ const LoginPage = ({ navigation }) => {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Web only: "not on the App Store" (iOS) / "Get it on Google Play" (Android) */}
+          <StoreNotice />
+
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.brand}>Stocksy</Text>
