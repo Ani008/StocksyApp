@@ -47,6 +47,7 @@ import WebFrame from "./src/components/WebFrame";
 import { PwaProvider } from "./src/context/PwaProvider";
 import { registerSessionExpiredHandler } from "./services/uiBridge";
 import { listenForNotificationClicks } from "./src/pwa/push";
+import { syncStatusBarColorToRoute } from "./src/pwa/statusBarColor";
 import { parseOpenTarget } from "./src/utils/push";
 
 // ─── Auth screens ─────────────────────────────────────────────────────────────
@@ -271,7 +272,16 @@ function AppContent() {
   return (
     <SafeAreaProvider>
       <ToastProvider>
-        <NavigationContainer ref={navigationRef} onReady={openPendingTarget}>
+        <NavigationContainer
+          ref={navigationRef}
+          onReady={() => {
+            syncStatusBarColorToRoute(navigationRef.getCurrentRoute()?.name);
+            openPendingTarget();
+          }}
+          onStateChange={() =>
+            syncStatusBarColorToRoute(navigationRef.getCurrentRoute()?.name)
+          }
+        >
           <StatusBar style="auto" />
           <Stack.Navigator
             initialRouteName={isAuthenticated ? "MainTabs" : "Login"}
