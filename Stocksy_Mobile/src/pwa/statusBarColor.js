@@ -10,9 +10,17 @@
 import { Platform } from "react-native";
 import { Colors } from "../theme";
 
-// Screens whose top edge is the blue hero header. Everything else has a
-// light top edge.
-const BLUE_TOP_ROUTES = new Set(["Home"]);
+// Colour at the very top edge of each screen, keyed by route name.
+// The four tab screens all open with the blue hero header; Buy Order is
+// pure white; every other screen uses the light app background.
+// When you add a screen with a different top colour, add it here.
+const TOP_COLOR_BY_ROUTE = {
+  Home: Colors.primaryDark,
+  Portfolio: Colors.primaryDark,
+  Markets: Colors.primaryDark,
+  Profile: Colors.primaryDark,
+  BuyOrder: Colors.white,
+};
 
 let lastColor = null;
 
@@ -34,7 +42,5 @@ export function setStatusBarColor(color) {
 }
 
 export function syncStatusBarColorToRoute(routeName) {
-  setStatusBarColor(
-    BLUE_TOP_ROUTES.has(routeName) ? Colors.primaryDark : Colors.background,
-  );
+  setStatusBarColor(TOP_COLOR_BY_ROUTE[routeName] || Colors.background);
 }
