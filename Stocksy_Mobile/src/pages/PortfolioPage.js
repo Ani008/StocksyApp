@@ -20,7 +20,7 @@ import { usePortfolio, SECTOR_COLORS } from '../hooks/usePortfolio';
 import { SegmentedToggle, IntradayPositionsView } from '../components';
 import {
   Colors, Typography, Shadows,
-  SCREEN_WIDTH, moderateScale, fontScale,
+  moderateScale, fontScale,
 } from '../theme';
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────
@@ -806,7 +806,16 @@ const styles = StyleSheet.create({
     gap: moderateScale(10),
   },
   tile: {
-    width: (SCREEN_WIDTH - moderateScale(42)) / 2,
+    // Two tiles per row, sized from the ROW's real width, not from the screen
+    // width. It used to be (SCREEN_WIDTH - 42) / 2. On web SCREEN_WIDTH is the
+    // window width rounded to a whole number, but phones with a fractional CSS
+    // width (e.g. 1080px / 2.75 = 392.727px, many Android phones) round UP, so
+    // the two tiles needed a fraction of a pixel more than the row had and the
+    // second one wrapped, leaving all four in one narrow column.
+    // 45% + grow means two always fit; grow makes them fill the row evenly.
+    flexBasis: '45%',
+    flexGrow: 1,
+    flexShrink: 1,
     backgroundColor: Colors.white,
     borderRadius: moderateScale(14),
     padding: moderateScale(14),
