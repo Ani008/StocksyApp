@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   ActivityIndicator,
@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { navigationRef } from "./services/navigation";
+import { createLinking } from "./src/navigation/linking";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
@@ -198,7 +199,11 @@ function AppContent() {
     if (!target || !authedRef.current || !navigationRef.isReady()) return;
     pendingTarget.current = null;
     navigationRef.navigate(target);
-    if (IS_WEB) window.history.replaceState(null, "", window.location.pathname);
+    // Drop "?open=..." from the address bar. Keep the existing history state:
+    // React Navigation stores its entry id there, and wiping it breaks Back.
+    if (IS_WEB) {
+      window.history.replaceState(window.history.state, "", window.location.pathname);
+    }
   }, []);
 
   useEffect(() => {
@@ -240,6 +245,14 @@ function AppContent() {
     setIsAuthenticated(false);
   };
 
+  // Web only: ties screens to browser history so the Android/browser Back
+  // button goes to the previous screen instead of leaving the PWA. Native
+  // keeps `undefined` (no change). Must stay above the early returns below.
+  const linking = useMemo(
+    () => (IS_WEB ? createLinking(isAuthenticated === true) : undefined),
+    [isAuthenticated],
+  );
+
   if (showSplashVideo) {
     return <SplashVideoScreen onFinish={() => setShowSplashVideo(false)} />;
   }
@@ -274,6 +287,9 @@ function AppContent() {
       <ToastProvider>
         <NavigationContainer
           ref={navigationRef}
+          linking={linking}
+          // Keep the tab title as "Stocksy" (linking would rename it per screen).
+          documentTitle={{ enabled: false }}
           onReady={() => {
             syncStatusBarColorToRoute(navigationRef.getCurrentRoute()?.name);
             openPendingTarget();
