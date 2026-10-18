@@ -5,6 +5,7 @@ import {
   INSTALL_SNOOZE_MS,
   UPDATE_SNOOZE_MS,
   getInstallMode,
+  isAndroidDevice,
   isIosDevice,
   isSnoozed,
   isStandaloneDisplay,
@@ -22,6 +23,14 @@ test("iPad reporting a Mac user agent is iOS only when it has a touch screen", (
   const macUa = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)";
   assert.equal(isIosDevice({ userAgent: macUa, platform: "MacIntel", maxTouchPoints: 5 }), true);
   assert.equal(isIosDevice({ userAgent: macUa, platform: "MacIntel", maxTouchPoints: 0 }), false);
+});
+
+test("isAndroidDevice: Android phones yes, iPhone / desktop / empty no", () => {
+  assert.equal(isAndroidDevice({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/126 Mobile Safari/537.36" }), true);
+  assert.equal(isAndroidDevice({ userAgent: "Mozilla/5.0 (Linux; Android 13; Redmi Note 11) SamsungBrowser/24.0" }), true);
+  assert.equal(isAndroidDevice({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" }), false);
+  assert.equal(isAndroidDevice({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126" }), false);
+  assert.equal(isAndroidDevice(), false);
 });
 
 test("Android and desktop are not iOS", () => {

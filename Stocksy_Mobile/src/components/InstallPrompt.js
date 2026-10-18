@@ -1,11 +1,12 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import AppText from "./AppText";
 import { Colors, Radius, Shadows, moderateScale } from "../theme";
 import { usePwa } from "../context/PwaProvider";
-import { INSTALL_MODE } from "../utils/pwa";
+import { INSTALL_MODE, isAndroidDevice } from "../utils/pwa";
+import { openPlayStoreFromWeb } from "../utils/openPlayStore";
 
 const IOS_STEPS = [
   { icon: "share-outline", text: "Tap the Share button in Safari's toolbar" },
@@ -13,19 +14,34 @@ const IOS_STEPS = [
   { icon: "checkmark-circle-outline", text: "Tap “Add”, then open Stocksy from your home screen" },
 ];
 
-// "Install Stocksy" card (web only). On Android / desktop Chrome the button
-// opens the browser's install dialog; iOS has no such API, so the button
-// reveals Add-to-Home-Screen instructions instead.
+// "Install Stocksy" card (web only).
+// - Android: the button opens the Play Store link (a placeholder until the app
+//   is published, see config/appUpdate.js) instead of installing the PWA.
+// - Desktop Chrome / Edge: the button opens the browser's install dialog.
+// - iOS has no such API, so the button reveals Add-to-Home-Screen steps.
 export default function InstallPrompt({ style }) {
   const { installMode, showInstallCard, promptInstall, dismissInstall } = usePwa();
   const [busy, setBusy] = useState(false);
   const [showSteps, setShowSteps] = useState(false);
+  const isAndroid = useMemo(
+    () =>
+      Platform.OS === "web" &&
+      typeof navigator !== "undefined" &&
+      isAndroidDevice({ userAgent: navigator.userAgent }),
+    [],
+  );
 
   if (Platform.OS !== "web" || !showInstallCard) return null;
 
   const isIos = installMode === INSTALL_MODE.IOS;
 
   const handlePrimary = async () => {
+    if (isAndroid) {
+      // Must be the first thing that runs in the tap, or the new tab can be
+      // blocked as a popup.
+      openPlayStoreFromWeb();
+      return;
+    }
     if (isIos) {
       setShowSteps((v) => !v);
       return;
@@ -48,7 +64,9 @@ export default function InstallPrompt({ style }) {
             Install Stocksy
           </AppText>
           <AppText variant="caption" color={Colors.textSecondary} style={styles.body}>
-            Add it to your home screen for one-tap access and a full-screen, app-like experience.
+            {isAndroid
+              ? "Get the Stocksy app from Google Play for one-tap access and a faster, full-screen experience."
+              : "Add it to your home screen for one-tap access and a full-screen, app-like experience."}
           </AppText>
         </View>
 

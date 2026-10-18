@@ -30,6 +30,11 @@ export function isIosDevice({ userAgent = "", platform = "", maxTouchPoints = 0 
   return platform === "MacIntel" && maxTouchPoints > 1;
 }
 
+/** Android phones and tablets (Chrome, Samsung Internet, installed PWA, ...). */
+export function isAndroidDevice({ userAgent = "" } = {}) {
+  return /Android/i.test(userAgent);
+}
+
 /**
  * True when the app is running as an installed PWA (home-screen launch)
  * rather than in a normal browser tab. iOS uses navigator.standalone, every

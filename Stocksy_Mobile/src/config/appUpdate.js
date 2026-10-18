@@ -6,6 +6,20 @@
 // the package of the build you actually publish on Google Play.
 export const PLAY_STORE_PACKAGE = "com.stocksy.app";
 
+// ── "Install Stocksy" banner on the web app / PWA (Android only) ──────────────
+// On Android the banner's Install button sends people to the Play Store instead
+// of installing the PWA. The app is not published yet, so until then it opens
+// PLAY_STORE_PLACEHOLDER_URL.
+//
+// WHEN THE APP GOES LIVE: set PLAY_STORE_LIVE to true. That is the only change
+// needed; the button then opens the real Play Store listing for
+// PLAY_STORE_PACKAGE.
+export const PLAY_STORE_LIVE = false;
+export const PLAY_STORE_PLACEHOLDER_URL = "https://stocksy.online";
+export const PLAY_STORE_WEB_URL = PLAY_STORE_LIVE
+  ? `https://play.google.com/store/apps/details?id=${PLAY_STORE_PACKAGE}`
+  : PLAY_STORE_PLACEHOLDER_URL;
+
 // Skipped in __DEV__ unless you set EXPO_PUBLIC_ENABLE_UPDATE_CHECK_IN_DEV=true
 export const ENABLE_IN_DEV = process.env.EXPO_PUBLIC_ENABLE_UPDATE_CHECK_IN_DEV === "true";
 
