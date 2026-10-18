@@ -33,6 +33,7 @@ import { usePortfolio } from "../hooks/usePortfolio";
 import useMarketData from "../hooks/useMarketData";
 
 import { Colors, moderateScale } from "../theme";
+import { COMPANY_DOMAINS } from "../constants/companyDomains";
 
 // ─── Sample data ─────────────────────────────────────────────────────────────
 const TOP_STOCKS = [
@@ -83,7 +84,7 @@ const LARGE_CAP_KEYS = [
     key: "NSE_EQ|INE467B01029",
     symbol: "TCS",
     name: "Tata Consultancy Services",
-    domain: "tcs.com",
+    domain: COMPANY_DOMAINS.TCS,
   },
   {
     key: "NSE_EQ|INE397D01024",
@@ -128,7 +129,7 @@ const MID_CAP_KEYS = [
     key: "NSE_EQ|INE081A01020",
     symbol: "TATASTEEL",
     name: "Tata Steel Ltd",
-    domain: "tatasteel.com",
+    domain: COMPANY_DOMAINS.TATASTEEL,
   },
   {
     key: "NSE_EQ|INE019A01038",
@@ -170,30 +171,6 @@ const SMALL_CAP_KEYS = [
     domain: "britannia.co.in",
   },
 ];
-
-// constants/companyDomains.js
-const COMPANY_DOMAINS = {
-  VEDL: "vedanta-zincinternational.com",
-  BEL: "bel-india.in",
-  IRFC: "irfc.co.in",
-  SUZLON: "suzlon.de",
-  RELIANCE: "ril.com",
-  TCS: "ice.nl",
-  HDFCBANK: "hdfcbank.com",
-  INFY: "infosys.com",
-  SBIN: "sbi.co.in",
-  ICICIBANK: "icicibank.com",
-  BHARTIARTL: "airtel.in",
-  HCLTECH: "hcltech.com",
-  TECHM: "techmahindra.com",
-  TATASTEEL: "tatasteelnederland.com",
-  JSWSTEEL: "jsw.in",
-  SUNPHARMA: "sunpharma.com",
-  CIPLA: "cipla.com",
-  COALINDIA: "coalindia.in",
-  DABUR: "dabur.com",
-  BRITANNIA: "britannia.co.in",
-};
 
 // ─── Helper: compute % change from close price ───────────────────────────────
 const calcChange = (ltp, cp) => {

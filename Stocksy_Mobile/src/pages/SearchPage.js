@@ -18,6 +18,7 @@ import WatchlistItem from "../components/WatchlistItem";
 import useMarketData from "../hooks/useMarketData";
 
 import { Colors, Typography, Shadows, fontScale, moderateScale } from "../theme";
+import { COMPANY_DOMAINS } from "../constants/companyDomains";
 
 // ─── Static instrument metadata ──────────────────────────────────────────────
 // This is the client-side mirror of config/instruments.js on the backend.
@@ -97,7 +98,7 @@ export const INSTRUMENTS = [
     key: "NSE_EQ|INE467B01029",
     symbol: "TCS",
     name: "Tata Consultancy Services",
-    domain: "tcs.com",
+    domain: COMPANY_DOMAINS.TCS,
     sector: "IT",
   },
   {
@@ -272,7 +273,7 @@ export const INSTRUMENTS = [
     key: "NSE_EQ|INE081A01020",
     symbol: "TATASTEEL",
     name: "Tata Steel Ltd",
-    domain: "tatasteel.com",
+    domain: COMPANY_DOMAINS.TATASTEEL,
     sector: "Metals",
   },
   {
