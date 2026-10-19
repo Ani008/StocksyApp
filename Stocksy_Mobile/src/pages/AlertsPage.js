@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -31,6 +31,56 @@ const STATUS_META = {
 };
 
 const ACTION_LABEL = { BUY: "Buy GTT", SELL: "Sell GTT", NOTIFY: "Alert" };
+
+// Filter tabs. "Triggered" covers everything that has fired: notify-only alerts
+// (TRIGGERED), GTT orders that were placed (EXECUTED), and GTT orders that
+// fired but couldn't be placed (FAILED, which keeps its red badge on the row).
+const FILTERS = [
+  { key: "ACTIVE", label: "Active", statuses: ["ACTIVE"] },
+  { key: "TRIGGERED", label: "Triggered", statuses: ["TRIGGERED", "EXECUTED", "FAILED"] },
+  { key: "CANCELLED", label: "Cancelled", statuses: ["CANCELLED"] },
+];
+
+const EMPTY_COPY = {
+  ACTIVE: {
+    title: "No active alerts",
+    subtitle: "Open any stock and tap the bell icon to get notified when it hits your price.",
+  },
+  TRIGGERED: {
+    title: "Nothing triggered yet",
+    subtitle: "Alerts and GTT orders show up here once the price hits your target.",
+  },
+  CANCELLED: {
+    title: "No cancelled alerts",
+    subtitle: "Alerts you cancel will be listed here.",
+  },
+};
+
+const FilterTabs = ({ value, counts, onChange }) => (
+  <View style={styles.tabsTrack} accessibilityRole="tablist">
+    {FILTERS.map((f) => {
+      const active = f.key === value;
+      return (
+        <TouchableOpacity
+          key={f.key}
+          style={[styles.tab, active && styles.tabActive]}
+          activeOpacity={0.8}
+          onPress={() => onChange(f.key)}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: active }}
+        >
+          <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>
+            {f.label}
+            <Text style={[styles.tabCount, active && styles.tabCountActive]}>
+              {"  "}
+              {counts[f.key] ?? 0}
+            </Text>
+          </Text>
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+);
 
 const AlertRow = ({ alert, onCancel }) => {
   const meta = STATUS_META[alert.status] || STATUS_META.ACTIVE;
@@ -90,6 +140,7 @@ const AlertsPage = ({ navigation }) => {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState("ACTIVE");
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -139,6 +190,26 @@ const AlertsPage = ({ navigation }) => {
     );
   };
 
+  const counts = useMemo(() => {
+    const c = {};
+    for (const f of FILTERS) {
+      c[f.key] = alerts.filter((a) => f.statuses.includes(a.status)).length;
+    }
+    return c;
+  }, [alerts]);
+
+  const visibleAlerts = useMemo(() => {
+    const active = FILTERS.find((f) => f.key === filter) || FILTERS[0];
+    return alerts.filter((a) => active.statuses.includes(a.status));
+  }, [alerts, filter]);
+
+  // First-time users (no alerts at all) get the original onboarding copy; once
+  // they have some, an empty tab explains what that tab is for instead.
+  const emptyCopy =
+    alerts.length === 0
+      ? { title: "No alerts yet", subtitle: EMPTY_COPY.ACTIVE.subtitle }
+      : EMPTY_COPY[filter];
+
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -166,8 +237,12 @@ const AlertsPage = ({ navigation }) => {
         <View style={styles.headerBtn} />
       </View>
 
+      <View style={styles.tabsWrap}>
+        <FilterTabs value={filter} counts={counts} onChange={setFilter} />
+      </View>
+
       <FlatList
-        data={alerts}
+        data={visibleAlerts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -185,10 +260,8 @@ const AlertsPage = ({ navigation }) => {
                 color={Colors.textMuted}
               />
             </View>
-            <Text style={styles.emptyTitle}>No alerts yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Open any stock and tap the bell icon to get notified when it hits your price.
-            </Text>
+            <Text style={styles.emptyTitle}>{emptyCopy.title}</Text>
+            <Text style={styles.emptySubtitle}>{emptyCopy.subtitle}</Text>
           </View>
         }
       />
@@ -227,6 +300,42 @@ const styles = StyleSheet.create({
     fontSize: fontScale(Typography.h4),
     fontWeight: "700",
     color: Colors.text,
+  },
+  tabsWrap: {
+    paddingHorizontal: moderateScale(20),
+    paddingBottom: moderateScale(12),
+  },
+  tabsTrack: {
+    flexDirection: "row",
+    backgroundColor: Colors.divider,
+    borderRadius: 20,
+    padding: moderateScale(3),
+  },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: moderateScale(8),
+    borderRadius: 17,
+  },
+  tabActive: {
+    backgroundColor: Colors.white,
+  },
+  tabText: {
+    fontSize: fontScale(Typography.caption),
+    fontWeight: "700",
+    color: Colors.textSecondary,
+  },
+  tabTextActive: {
+    color: Colors.primaryDark,
+  },
+  tabCount: {
+    fontSize: fontScale(11),
+    fontWeight: "600",
+    color: Colors.textMuted,
+  },
+  tabCountActive: {
+    color: Colors.primary,
   },
   listContent: {
     paddingHorizontal: moderateScale(20),
