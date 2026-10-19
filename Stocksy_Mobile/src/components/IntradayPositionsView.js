@@ -53,6 +53,30 @@ function fmtPct(n) {
   return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 }
 
+// Alert.alert is a silent no-op on react-native-web (the PWA), so every
+// confirmation / error in this view must go through these helpers instead —
+// otherwise taps on SL / Remove / Exit all appear to "do nothing" on the web.
+function showMessage(title, message) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") window.alert(`${title}\n\n${message}`);
+    return;
+  }
+  Alert.alert(title, message);
+}
+
+function confirmAction(title, message, confirmText, onConfirm) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.confirm(`${title}\n\n${message}`)) {
+      onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: "Cancel", style: "cancel" },
+    { text: confirmText, style: "destructive", onPress: onConfirm },
+  ]);
+}
+
 // Same identity used everywhere a position needs to be matched against its
 // resting stop-loss order: wallet + instrument + product type.
 function positionKey(p) {
@@ -107,6 +131,7 @@ function PositionRow({ position, onPress, onSetStopLoss, onRemoveStopLoss }) {
             <TouchableOpacity
               style={styles.slBtn}
               activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={(e) => {
                 e.stopPropagation?.();
                 onSetStopLoss?.(position);
@@ -118,6 +143,7 @@ function PositionRow({ position, onPress, onSetStopLoss, onRemoveStopLoss }) {
             <TouchableOpacity
               style={[styles.slBtn, styles.slRemoveBtn]}
               activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={(e) => {
                 e.stopPropagation?.();
                 onRemoveStopLoss?.(position);
@@ -131,6 +157,7 @@ function PositionRow({ position, onPress, onSetStopLoss, onRemoveStopLoss }) {
           <TouchableOpacity
             style={styles.slBtn}
             activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             onPress={(e) => {
               e.stopPropagation?.();
               onSetStopLoss?.(position);
@@ -161,6 +188,8 @@ function PositionRow({ position, onPress, onSetStopLoss, onRemoveStopLoss }) {
 function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced }) {
   const [trigger, setTrigger] = useState("");
   const [placing, setPlacing] = useState(false);
+  // Inline error (Alert.alert is a no-op on web, so errors live in the modal).
+  const [errorText, setErrorText] = useState("");
   // Duplicate-order protection (security review item 13): one idempotency key
   // for the stop-loss being set, kept across retries so a lost response or a
   // double tap can never create two resting SL orders. (Must stay above the
@@ -174,6 +203,7 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
   useEffect(() => {
     if (visible) {
       setTrigger(existingOrder ? String(existingOrder.trigger_price) : "");
+      setErrorText("");
     }
   }, [visible, existingOrder]);
 
@@ -195,7 +225,7 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
     const triggerNum = parseFloat(trigger);
 
     if (!triggerNum || triggerNum <= 0) {
-      Alert.alert("Enter a trigger price", "Trigger price must be a positive number.");
+      setErrorText("Enter a trigger price. It must be a positive number.");
       return;
     }
 
@@ -204,16 +234,14 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
     // error instead of a round-trip rejection.
     if (ltp != null) {
       if (closingSide === "SELL" && triggerNum >= ltp) {
-        Alert.alert(
-          "Invalid trigger price",
-          `For a long position, the stop-loss trigger must be BELOW the current price (₹${fmt(ltp)}).`,
+        setErrorText(
+          `For a long position, the stop-loss trigger must be BELOW the current price (${fmt(ltp)}).`,
         );
         return;
       }
       if (closingSide === "BUY" && triggerNum <= ltp) {
-        Alert.alert(
-          "Invalid trigger price",
-          `For a short position, the stop-loss trigger must be ABOVE the current price (₹${fmt(ltp)}).`,
+        setErrorText(
+          `For a short position, the stop-loss trigger must be ABOVE the current price (${fmt(ltp)}).`,
         );
         return;
       }
@@ -221,6 +249,7 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
 
     if (submittingRef.current) return; // synchronous double-tap guard
     submittingRef.current = true;
+    setErrorText("");
     setPlacing(true);
     try {
       // Cancel-then-replace: remove the old resting SL first so there's
@@ -251,8 +280,7 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
     } catch (err) {
       slAttempt.failed(err);
       const unsure = isAmbiguousFailure(err);
-      Alert.alert(
-        isEditing ? "Couldn't update stop-loss" : "Couldn't place stop-loss",
+      setErrorText(
         unsure
           ? "We couldn't confirm whether it went through. Tap again to retry: it won't be set twice."
           : err?.response?.data?.message || err?.message || "Something went wrong.",
@@ -288,12 +316,17 @@ function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced 
           <TextInput
             style={styles.modalInput}
             value={trigger}
-            onChangeText={setTrigger}
+            onChangeText={(t) => {
+              setTrigger(t);
+              if (errorText) setErrorText("");
+            }}
             placeholder={closingSide === "SELL" ? "e.g. below current price" : "e.g. above current price"}
             placeholderTextColor={L.textTer}
             keyboardType="decimal-pad"
             editable={!placing}
           />
+
+          {!!errorText && <Text style={styles.modalError}>{errorText}</Text>}
 
           <View style={styles.modalBtnRow}>
             <TouchableOpacity style={styles.modalCancelBtn} onPress={handleClose} disabled={placing}>
@@ -396,54 +429,42 @@ export default function IntradayPositionsView({
     const order = slOrdersByKey[positionKey(position)];
     if (!order || removingKey) return;
 
-    Alert.alert(
+    confirmAction(
       "Remove stop-loss?",
       `${position.symbol} will no longer auto-close if the price hits ${fmt(parseFloat(order.trigger_price), 2)}.`,
-      [
-        { text: "Keep it", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            const key = positionKey(position);
-            setRemovingKey(key);
-            try {
-              await cancelOrder(order.id);
-              setSlOrdersByKey((prev) => {
-                const next = { ...prev };
-                delete next[key];
-                return next;
-              });
-            } catch (err) {
-              Alert.alert(
-                "Couldn't remove stop-loss",
-                err?.response?.data?.message || err?.message || "Something went wrong.",
-              );
-            } finally {
-              setRemovingKey(null);
-            }
-          },
-        },
-      ],
+      "Remove",
+      async () => {
+        const key = positionKey(position);
+        setRemovingKey(key);
+        try {
+          await cancelOrder(order.id);
+          setSlOrdersByKey((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        } catch (err) {
+          showMessage(
+            "Couldn't remove stop-loss",
+            err?.response?.data?.message || err?.message || "Something went wrong.",
+          );
+        } finally {
+          setRemovingKey(null);
+        }
+      },
     );
   };
 
   const handleExitAll = () => {
     if (!hasPositions || exiting) return;
 
-    Alert.alert(
+    confirmAction(
       "Exit all intraday positions?",
       `This will place a MARKET order (SELL for longs, BUY for shorts) to close all ${positions.length} open intraday position${
         positions.length !== 1 ? "s" : ""
       } at the current price.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Exit all",
-          style: "destructive",
-          onPress: runExitAll,
-        },
-      ],
+      "Exit all",
+      runExitAll,
     );
   };
 
@@ -491,7 +512,7 @@ export default function IntradayPositionsView({
     onExited?.();
 
     if (failed.length > 0) {
-      Alert.alert(
+      showMessage(
         "Some exits failed",
         `${results.length - failed.length} of ${results.length} positions were closed. ${
           failed.length
@@ -597,7 +618,7 @@ export default function IntradayPositionsView({
           setSlPosition(null);
           loadStopLossOrders(); // refresh the SL badge/actions for this position
           onExited?.(); // reuse the same "refresh portfolio" callback the parent already wires up
-          Alert.alert(
+          showMessage(
             action === "updated" ? "Stop-loss updated" : "Stop-loss placed",
             `We'll watch ${symbol} and auto-close this position if it hits your trigger price.`,
           );
@@ -842,6 +863,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: L.textPri,
     marginBottom: 18,
+  },
+  modalError: {
+    fontSize: 12,
+    color: L.red,
+    lineHeight: 17,
+    marginTop: -8,
+    marginBottom: 14,
   },
   modalBtnRow: {
     flexDirection: "row",
