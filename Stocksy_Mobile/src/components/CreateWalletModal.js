@@ -84,7 +84,13 @@ const CreateWalletModal = ({
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1, justifyContent: "flex-end" }} // adjust to match your existing overlay/sheet layout
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        {/* Tap-outside-to-dismiss-keyboard is native only. On web, Keyboard.dismiss
+            blurs the focused field, and clicks inside the sheet bubble up to this
+            wrapper, so tapping the name/amount input focused it and then instantly
+            blurred it: the form couldn't be typed into on the PWA. */}
+        <TouchableWithoutFeedback
+          onPress={Platform.OS === "web" ? undefined : Keyboard.dismiss}
+        >
           <View style={styles.overlay}>
             <KeyboardAvoidingView
               behavior={Platform.OS === "ios" ? "padding" : "height"}
