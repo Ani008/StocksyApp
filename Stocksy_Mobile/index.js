@@ -1,4 +1,6 @@
 import { registerRootComponent } from "expo";
+// Web only: gives the PWA a working Alert.alert (no-op on native, see file).
+import "./src/pwa/webAlert";
 import App from "./App";
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);
