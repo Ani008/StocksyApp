@@ -17,6 +17,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import alertService from "../../services/alertService";
 import { showToast } from "../../services/uiBridge";
 import PushOptInCard from "../components/PushOptInCard";
+import FilterTabs from "../components/FilterTabs";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const formatPrice = (price) =>
@@ -55,32 +56,6 @@ const EMPTY_COPY = {
     subtitle: "Alerts you cancel will be listed here.",
   },
 };
-
-const FilterTabs = ({ value, counts, onChange }) => (
-  <View style={styles.tabsTrack} accessibilityRole="tablist">
-    {FILTERS.map((f) => {
-      const active = f.key === value;
-      return (
-        <TouchableOpacity
-          key={f.key}
-          style={[styles.tab, active && styles.tabActive]}
-          activeOpacity={0.8}
-          onPress={() => onChange(f.key)}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: active }}
-        >
-          <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>
-            {f.label}
-            <Text style={[styles.tabCount, active && styles.tabCountActive]}>
-              {"  "}
-              {counts[f.key] ?? 0}
-            </Text>
-          </Text>
-        </TouchableOpacity>
-      );
-    })}
-  </View>
-);
 
 const AlertRow = ({ alert, onCancel }) => {
   const meta = STATUS_META[alert.status] || STATUS_META.ACTIVE;
@@ -238,7 +213,11 @@ const AlertsPage = ({ navigation }) => {
       </View>
 
       <View style={styles.tabsWrap}>
-        <FilterTabs value={filter} counts={counts} onChange={setFilter} />
+        <FilterTabs
+          value={filter}
+          onChange={setFilter}
+          options={FILTERS.map((f) => ({ key: f.key, label: f.label, count: counts[f.key] }))}
+        />
       </View>
 
       <FlatList
@@ -304,38 +283,6 @@ const styles = StyleSheet.create({
   tabsWrap: {
     paddingHorizontal: moderateScale(20),
     paddingBottom: moderateScale(12),
-  },
-  tabsTrack: {
-    flexDirection: "row",
-    backgroundColor: Colors.divider,
-    borderRadius: 20,
-    padding: moderateScale(3),
-  },
-  tab: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: moderateScale(8),
-    borderRadius: 17,
-  },
-  tabActive: {
-    backgroundColor: Colors.white,
-  },
-  tabText: {
-    fontSize: fontScale(Typography.caption),
-    fontWeight: "700",
-    color: Colors.textSecondary,
-  },
-  tabTextActive: {
-    color: Colors.primaryDark,
-  },
-  tabCount: {
-    fontSize: fontScale(11),
-    fontWeight: "600",
-    color: Colors.textMuted,
-  },
-  tabCountActive: {
-    color: Colors.primary,
   },
   listContent: {
     paddingHorizontal: moderateScale(20),
