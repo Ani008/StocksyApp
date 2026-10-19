@@ -89,17 +89,19 @@ export async function getValidAccessToken() {
 /**
  * App start. Web: ask the server whether the cookie still holds a live
  * session. Native: signed in if either token is stored (api.js refreshes on
- * demand). Resolves true/false, and false only when really signed out.
+ * demand). Resolves true/false.
+ *
+ * Web, server unreachable / unexpected error: we cannot tell, so we only keep
+ * the person in the app if this browser had a session before (see
+ * tokenStore.hasSessionHint). A first-time visitor has none, so they get the
+ * login screen instead of a dashboard full of errors.
  */
 export async function restoreSession() {
   if (store.isWeb()) {
     try {
       return !!(await refreshSession());
     } catch {
-      // Offline at launch: we cannot tell. Show the app rather than bounce a
-      // possibly-signed-in person to the login screen; API calls will sort it
-      // out once the connection is back.
-      return true;
+      return store.hasSessionHint();
     }
   }
   return !!((await store.getAccessToken()) || (await store.getRefreshToken()));

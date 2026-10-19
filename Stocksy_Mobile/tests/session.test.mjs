@@ -9,6 +9,14 @@ const state = (globalThis.__stubState ??= {
   responder: async () => ({ data: {} }),
 });
 
+// Minimal localStorage stand-in (Node has none) for the web "session hint".
+const hintStore = new Map();
+globalThis.localStorage = {
+  getItem: (k) => hintStore.get(k) ?? null,
+  setItem: (k, v) => void hintStore.set(k, String(v)),
+  removeItem: (k) => void hintStore.delete(k),
+};
+
 const store = await import("../services/tokenStore.js");
 const mgr = await import("../services/sessionManager.js");
 
@@ -131,16 +139,38 @@ test("getValidAccessToken: offline returns the token it has, signed out returns 
   assert.equal(await mgr.getValidAccessToken(), null);
 });
 
-test("restoreSession (web): true when the cookie is valid, false when refused, true when offline", async () => {
+test("restoreSession (web): true when the cookie is valid, false when refused", async () => {
   assert.equal(await mgr.restoreSession(), true);
   assert.equal(await store.getAccessToken(), "access-1");
 
   await store.clearSession();
   state.responder = async () => { throw httpError(401); };
   assert.equal(await mgr.restoreSession(), false);
+});
 
+test("restoreSession (web): first-time visitor + server error/offline -> login, not dashboard", async () => {
+  for (const err of [networkError(), httpError(500), httpError(429), httpError(400)]) {
+    state.responder = async () => { throw err; };
+    assert.equal(await mgr.restoreSession(), false);
+  }
+});
+
+test("restoreSession (web): returning user + offline -> stays in the app; after a refused session -> login", async () => {
+  await store.saveSession(session()); // sets the hint
   state.responder = async () => { throw networkError(); };
   assert.equal(await mgr.restoreSession(), true);
+
+  state.responder = async () => { throw httpError(401); }; // cookie really gone: clears hint
+  assert.equal(await mgr.restoreSession(), false);
+  state.responder = async () => { throw networkError(); };
+  assert.equal(await mgr.restoreSession(), false);
+});
+
+test("web: the session hint holds no token and is removed on clearSession", async () => {
+  await store.saveSession(session());
+  assert.deepEqual([...hintStore.values()], ["1"]);
+  await store.clearSession();
+  assert.equal(hintStore.size, 0);
 });
 
 test("restoreSession (native): signed in iff a token is stored; makes no request", async () => {

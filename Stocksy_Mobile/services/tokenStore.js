@@ -26,6 +26,32 @@ const TOKEN_KEY = "token"; // same key older builds used
 const USER_ID_KEY = "userId";
 const REFRESH_KEY = "stocksy_refresh_token";
 
+// WEB only: a NON-SECRET marker ("1") saying "this browser has signed in and has
+// not signed out since". It holds no token and grants no access; it only lets
+// app start decide what to show when the server cannot be reached (see
+// sessionManager.restoreSession). Without it, a brand-new visitor whose
+// session check failed would be dropped on the dashboard with no login.
+const SESSION_HINT_KEY = "stocksy_session_hint";
+
+const readHint = () => {
+  try {
+    return globalThis.localStorage?.getItem(SESSION_HINT_KEY) === "1";
+  } catch {
+    return false; // storage blocked (private mode etc.)
+  }
+};
+const writeHint = (on) => {
+  try {
+    if (on) globalThis.localStorage?.setItem(SESSION_HINT_KEY, "1");
+    else globalThis.localStorage?.removeItem(SESSION_HINT_KEY);
+  } catch {
+    /* storage blocked: the hint just will not persist */
+  }
+};
+
+/** Web: has this browser had a signed-in session that was not signed out? */
+export const hasSessionHint = () => isWeb() && readHint();
+
 let memToken = null;
 let memExpiresAt = 0; // ms epoch; 0 = unknown
 let memUserId = null;
@@ -75,7 +101,10 @@ export const saveSession = async (data) => {
   memExpiresAt = data.expiresIn ? Date.now() + data.expiresIn * 1000 : 0;
   if (data.id) memUserId = String(data.id);
 
-  if (isWeb()) return;
+  if (isWeb()) {
+    writeHint(true);
+    return;
+  }
 
   await AsyncStorage.setItem(TOKEN_KEY, data.token);
   if (data.id) await AsyncStorage.setItem(USER_ID_KEY, String(data.id));
@@ -90,6 +119,7 @@ export const clearSession = async () => {
   memExpiresAt = 0;
   memUserId = null;
   memRefreshToken = null;
+  writeHint(false);
 
   // Remove anything an older build left behind, on every platform.
   try {

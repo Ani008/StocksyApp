@@ -1,0 +1,145 @@
+diff --git a/Stocksy_Mobile/services/sessionManager.js b/Stocksy_Mobile/services/sessionManager.js
+index 4c34c6b..e85c7a9 100644
+--- a/Stocksy_Mobile/services/sessionManager.js
++++ b/Stocksy_Mobile/services/sessionManager.js
+@@ -89,17 +89,19 @@ export async function getValidAccessToken() {
+ /**
+  * App start. Web: ask the server whether the cookie still holds a live
+  * session. Native: signed in if either token is stored (api.js refreshes on
+- * demand). Resolves true/false, and false only when really signed out.
++ * demand). Resolves true/false.
++ *
++ * Web, server unreachable / unexpected error: we cannot tell, so we only keep
++ * the person in the app if this browser had a session before (see
++ * tokenStore.hasSessionHint). A first-time visitor has none, so they get the
++ * login screen instead of a dashboard full of errors.
+  */
+ export async function restoreSession() {
+   if (store.isWeb()) {
+     try {
+       return !!(await refreshSession());
+     } catch {
+-      // Offline at launch: we cannot tell. Show the app rather than bounce a
+-      // possibly-signed-in person to the login screen; API calls will sort it
+-      // out once the connection is back.
+-      return true;
++      return store.hasSessionHint();
+     }
+   }
+   return !!((await store.getAccessToken()) || (await store.getRefreshToken()));
+diff --git a/Stocksy_Mobile/services/tokenStore.js b/Stocksy_Mobile/services/tokenStore.js
+index 352c434..7aef562 100644
+--- a/Stocksy_Mobile/services/tokenStore.js
++++ b/Stocksy_Mobile/services/tokenStore.js
+@@ -26,6 +26,32 @@ const TOKEN_KEY = "token"; // same key older builds used
+ const USER_ID_KEY = "userId";
+ const REFRESH_KEY = "stocksy_refresh_token";
+ 
++// WEB only: a NON-SECRET marker ("1") saying "this browser has signed in and has
++// not signed out since". It holds no token and grants no access; it only lets
++// app start decide what to show when the server cannot be reached (see
++// sessionManager.restoreSession). Without it, a brand-new visitor whose
++// session check failed would be dropped on the dashboard with no login.
++const SESSION_HINT_KEY = "stocksy_session_hint";
++
++const readHint = () => {
++  try {
++    return globalThis.localStorage?.getItem(SESSION_HINT_KEY) === "1";
++  } catch {
++    return false; // storage blocked (private mode etc.)
++  }
++};
++const writeHint = (on) => {
++  try {
++    if (on) globalThis.localStorage?.setItem(SESSION_HINT_KEY, "1");
++    else globalThis.localStorage?.removeItem(SESSION_HINT_KEY);
++  } catch {
++    /* storage blocked: the hint just will not persist */
++  }
++};
++
++/** Web: has this browser had a signed-in session that was not signed out? */
++export const hasSessionHint = () => isWeb() && readHint();
++
+ let memToken = null;
+ let memExpiresAt = 0; // ms epoch; 0 = unknown
+ let memUserId = null;
+@@ -75,7 +101,10 @@ export const saveSession = async (data) => {
+   memExpiresAt = data.expiresIn ? Date.now() + data.expiresIn * 1000 : 0;
+   if (data.id) memUserId = String(data.id);
+ 
+-  if (isWeb()) return;
++  if (isWeb()) {
++    writeHint(true);
++    return;
++  }
+ 
+   await AsyncStorage.setItem(TOKEN_KEY, data.token);
+   if (data.id) await AsyncStorage.setItem(USER_ID_KEY, String(data.id));
+@@ -90,6 +119,7 @@ export const clearSession = async () => {
+   memExpiresAt = 0;
+   memUserId = null;
+   memRefreshToken = null;
++  writeHint(false);
+ 
+   // Remove anything an older build left behind, on every platform.
+   try {
+diff --git a/Stocksy_Mobile/tests/session.test.mjs b/Stocksy_Mobile/tests/session.test.mjs
+index 863ebc4..a467264 100644
+--- a/Stocksy_Mobile/tests/session.test.mjs
++++ b/Stocksy_Mobile/tests/session.test.mjs
+@@ -9,6 +9,14 @@ const state = (globalThis.__stubState ??= {
+   responder: async () => ({ data: {} }),
+ });
+ 
++// Minimal localStorage stand-in (Node has none) for the web "session hint".
++const hintStore = new Map();
++globalThis.localStorage = {
++  getItem: (k) => hintStore.get(k) ?? null,
++  setItem: (k, v) => void hintStore.set(k, String(v)),
++  removeItem: (k) => void hintStore.delete(k),
++};
++
+ const store = await import("../services/tokenStore.js");
+ const mgr = await import("../services/sessionManager.js");
+ 
+@@ -131,16 +139,38 @@ test("getValidAccessToken: offline returns the token it has, signed out returns
+   assert.equal(await mgr.getValidAccessToken(), null);
+ });
+ 
+-test("restoreSession (web): true when the cookie is valid, false when refused, true when offline", async () => {
++test("restoreSession (web): true when the cookie is valid, false when refused", async () => {
+   assert.equal(await mgr.restoreSession(), true);
+   assert.equal(await store.getAccessToken(), "access-1");
+ 
+   await store.clearSession();
+   state.responder = async () => { throw httpError(401); };
+   assert.equal(await mgr.restoreSession(), false);
++});
++
++test("restoreSession (web): first-time visitor + server error/offline -> login, not dashboard", async () => {
++  for (const err of [networkError(), httpError(500), httpError(429), httpError(400)]) {
++    state.responder = async () => { throw err; };
++    assert.equal(await mgr.restoreSession(), false);
++  }
++});
+ 
++test("restoreSession (web): returning user + offline -> stays in the app; after a refused session -> login", async () => {
++  await store.saveSession(session()); // sets the hint
+   state.responder = async () => { throw networkError(); };
+   assert.equal(await mgr.restoreSession(), true);
++
++  state.responder = async () => { throw httpError(401); }; // cookie really gone: clears hint
++  assert.equal(await mgr.restoreSession(), false);
++  state.responder = async () => { throw networkError(); };
++  assert.equal(await mgr.restoreSession(), false);
++});
++
++test("web: the session hint holds no token and is removed on clearSession", async () => {
++  await store.saveSession(session());
++  assert.deepEqual([...hintStore.values()], ["1"]);
++  await store.clearSession();
++  assert.equal(hintStore.size, 0);
+ });
+ 
+ test("restoreSession (native): signed in iff a token is stored; makes no request", async () => {
