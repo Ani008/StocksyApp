@@ -57,8 +57,9 @@ const SPARKS = Array.from({ length: 10 }, (_, i) => ({
  *   size       height of the flame in px (width follows)
  *   lit        false renders a dim, still, grey flame (no streak yet)
  *   celebrate  play the one-off burst
+ *   onLight    tune glow, embers and sparks for a light background
  */
-export default function StreakFlame({ size = 72, lit = true, celebrate = false }) {
+export default function StreakFlame({ size = 72, lit = true, celebrate = false, onLight = false }) {
   const width = (size * VIEW_W) / VIEW_H;
   const box = size * 2.1; // room for the glow and the burst
   const palette = lit ? LIT : OUT;
@@ -197,8 +198,8 @@ export default function StreakFlame({ size = 72, lit = true, celebrate = false }
         <Svg width={box} height={box} viewBox="0 0 100 100">
           <Defs>
             <RadialGradient id={`${id}g`} cx="50" cy="56" r="50" gradientUnits="userSpaceOnUse">
-              <Stop offset="0" stopColor={palette.glow} stopOpacity="0.55" />
-              <Stop offset="0.55" stopColor={palette.glow} stopOpacity="0.16" />
+              <Stop offset="0" stopColor={palette.glow} stopOpacity={onLight ? "0.3" : "0.55"} />
+              <Stop offset="0.55" stopColor={palette.glow} stopOpacity={onLight ? "0.08" : "0.16"} />
               <Stop offset="1" stopColor={palette.glow} stopOpacity="0" />
             </RadialGradient>
           </Defs>
@@ -234,7 +235,13 @@ export default function StreakFlame({ size = 72, lit = true, celebrate = false }
                 width: e.size,
                 height: e.size,
                 borderRadius: e.size,
-                backgroundColor: i % 2 ? Colors.primaryLight : Colors.primaryAccent,
+                backgroundColor: onLight
+                  ? i % 2
+                    ? Colors.primaryAccent
+                    : Colors.primary
+                  : i % 2
+                    ? Colors.primaryLight
+                    : Colors.primaryAccent,
                 left: box / 2 + e.x * size - e.size / 2,
                 top: box / 2 - size * 0.1,
                 opacity: v.interpolate({
@@ -266,7 +273,13 @@ export default function StreakFlame({ size = 72, lit = true, celebrate = false }
               width: s.size,
               height: s.size,
               borderRadius: s.size,
-              backgroundColor: i % 2 ? Colors.white : Colors.primaryAccent,
+              backgroundColor: onLight
+                ? i % 2
+                  ? Colors.primaryDark
+                  : Colors.primaryAccent
+                : i % 2
+                  ? Colors.white
+                  : Colors.primaryAccent,
               opacity: sparkOpacity,
               transform: [
                 {

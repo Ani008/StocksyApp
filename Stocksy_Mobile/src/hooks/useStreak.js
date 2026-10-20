@@ -35,10 +35,14 @@ async function resolveStorageKey() {
  * caller invokes `recheck` (the dashboard does so on screen focus, because tab
  * screens stay mounted across midnight).
  *
+ * `readOnly` is for screens that only display the streak (Profile): it reads
+ * what is saved and never records a check-in. Only the Home screen records
+ * one, so the "Day N" welcome there can't be used up by another screen.
+ *
  * Today this lives on the device only. It is lost on reinstall and follows the
  * phone's clock; moving it to the server is the follow-up.
  */
-export default function useStreak() {
+export default function useStreak({ readOnly = false } = {}) {
   const [state, setState] = useState(EMPTY_STREAK);
   const [today, setToday] = useState(() => toDateKey());
   const [loading, setLoading] = useState(true);
@@ -55,6 +59,21 @@ export default function useStreak() {
     busy.current = true;
     try {
       if (!storageKey.current) storageKey.current = await resolveStorageKey();
+
+      if (readOnly) {
+        // Always re-read: another screen may have recorded a day since.
+        let latest;
+        try {
+          const raw = await AsyncStorage.getItem(storageKey.current);
+          latest = sanitizeState(raw ? JSON.parse(raw) : null);
+        } catch {
+          latest = sanitizeState(null);
+        }
+        stateRef.current = latest;
+        setState(latest);
+        setToday(toDateKey());
+        return;
+      }
 
       let saved = stateRef.current;
       if (saved === EMPTY_STREAK) {
@@ -90,7 +109,7 @@ export default function useStreak() {
       busy.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [readOnly]);
 
   useEffect(() => {
     recheck();

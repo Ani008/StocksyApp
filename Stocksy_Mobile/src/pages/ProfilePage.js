@@ -23,6 +23,8 @@ import { StatusBar } from "expo-status-bar";
 import authService from "../../services/authService";
 import { showToast } from "../../services/uiBridge";
 import DeleteAccountModal from "../components/DeleteAccountModal";
+import StreakCard from "../components/StreakCard";
+import useStreak from "../hooks/useStreak";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const APP_VERSION = "1.0.0";
@@ -43,11 +45,19 @@ const ProfilePage = ({ navigation }) => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
+  // Display only: the Home screen is the one that records the daily check-in.
+  const streak = useStreak({ readOnly: true });
+  const refreshStreak = streak.recheck;
+
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", loadUser);
+    const onFocus = () => {
+      loadUser();
+      refreshStreak();
+    };
+    const unsubscribe = navigation.addListener("focus", onFocus);
     loadUser();
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, refreshStreak]);
 
   const loadUser = async () => {
     try {
@@ -497,6 +507,18 @@ const ProfilePage = ({ navigation }) => {
             </View>
           )}
 
+          {/* Daily streak */}
+          {!streak.loading && (
+            <StreakCard
+              style={styles.streakCard}
+              streak={streak.streak}
+              longest={streak.longest}
+              week={streak.week}
+              message={streak.message}
+              celebrate={false}
+            />
+          )}
+
           {/* Logout */}
           <TouchableOpacity
             style={styles.logoutCard}
@@ -810,6 +832,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.primary,
   },
+
+  // ── Streak ────────────────────────────────────────────────────────────
+  streakCard: { marginTop: moderateScale(6), marginBottom: moderateScale(8) },
 
   // ── Logout ────────────────────────────────────────────────────────────
   logoutCard: {

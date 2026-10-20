@@ -26,7 +26,6 @@ import WatchlistItem from "../components/WatchlistItem";
 import MiniHoldingCard from "../components/MiniHoldingCard";
 import UpdateBanner from "../components/UpdateBanner";
 import InstallPrompt from "../components/InstallPrompt";
-import StreakCard from "../components/StreakCard";
 import StreakWelcomeOverlay from "../components/StreakWelcomeOverlay";
 import useStreak from "../hooks/useStreak";
 import { usePortfolio } from "../hooks/usePortfolio";
@@ -511,20 +510,6 @@ const DashboardPage = ({ navigation }) => {
           </View>
         </Card>
       </View>
-
-      {/* ── Daily streak ───────────────────────────────────────────────── */}
-      {/* Held back while the welcome plays so its count-up isn't wasted
-          behind the dim layer. */}
-      {!streak.loading && !showWelcome && (
-        <StreakCard
-          style={{ marginTop: moderateScale(16) }}
-          streak={streak.streak}
-          longest={streak.longest}
-          week={streak.week}
-          message={streak.message}
-          celebrate={streak.celebrate}
-        />
-      )}
 
       <UpdateBanner style={{ marginTop: moderateScale(16) }} />
       {/* Web only: "Install Stocksy" card (renders nothing on native / once installed) */}

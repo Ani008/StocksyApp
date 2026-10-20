@@ -10,9 +10,9 @@ const NATIVE = Platform.OS !== "web";
 const DAY = 34; // diameter of a day circle
 const FLAME = moderateScale(68);
 
-const DARK_CARD = Colors.chartBg;
-const DARK_EDGE = "rgba(96,165,250,0.18)"; // primaryAccent, faint
-const TRACK = "rgba(59,130,246,0.22)"; // primary, faint: the joined "done" pill
+const CELL = "#EDF1F7"; // an empty day circle
+const TRACK = Colors.primaryLight; // the joined "done" pill
+const LONE = "#BFDBFE"; // a checked day that stands on its own
 
 /** Counts up to `value` so a new streak number feels earned. */
 function useCountUp(value, enabled) {
@@ -98,13 +98,17 @@ function DayCell({ day, index, inRun }) {
             styles.cell,
             done && styles.cellDone,
             // A checked day that isn't part of a joined pill gets its own circle.
-            done && !inRun && (day.isToday ? styles.cellToday : styles.cellLone),
+            // Today's check is a solid blue circle (it sits on the pill when part
+            // of a run); other checked days get a pale circle unless they are
+            // already inside a joined pill.
+            done && day.isToday && styles.cellToday,
+            done && !day.isToday && !inRun && styles.cellLone,
             day.isToday && !done && styles.cellToday,
             { transform: [{ scale: pop }] },
           ]}
         >
           {done ? (
-            <Ionicons name="checkmark" size={17} color={day.isToday ? Colors.white : Colors.primaryAccent} />
+            <Ionicons name="checkmark" size={17} color={day.isToday ? Colors.white : Colors.primaryDark} />
           ) : (
             <Text
               style={[
@@ -194,7 +198,7 @@ export default function StreakCard({ streak, longest, week, message, celebrate, 
       >
         <View style={styles.topRow}>
           <View style={styles.flameBox}>
-            <StreakFlame size={FLAME} lit={lit} celebrate={celebrate} />
+            <StreakFlame size={FLAME} lit={lit} celebrate={celebrate} onLight />
           </View>
 
           <View style={styles.countBlock}>
@@ -206,13 +210,13 @@ export default function StreakCard({ streak, longest, week, message, celebrate, 
             </View>
             {longest > 0 && (
               <View style={styles.bestChip}>
-                <Ionicons name="trophy-outline" size={11} color={Colors.primaryAccent} />
+                <Ionicons name="trophy-outline" size={11} color={Colors.primaryDark} />
                 <Text style={styles.bestText}>Best {longest}</Text>
               </View>
             )}
           </View>
 
-          {onPress && <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />}
+          {onPress && <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />}
         </View>
 
         <View style={styles.weekBox}>
@@ -253,17 +257,15 @@ export default function StreakCard({ streak, longest, week, message, celebrate, 
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: DARK_CARD,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: DARK_EDGE,
+    // Same look as the other cards on the Profile page.
+    backgroundColor: Colors.white,
+    borderRadius: 18,
     padding: moderateScale(16),
     overflow: "hidden",
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    shadowColor: Colors.black,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   topRow: { flexDirection: "row", alignItems: "center" },
   flameBox: {
@@ -277,16 +279,16 @@ const styles = StyleSheet.create({
   countBlock: { flex: 1 },
   countRow: { flexDirection: "row", alignItems: "flex-end" },
   count: {
-    color: Colors.white,
+    color: Colors.text,
     fontSize: moderateScale(44),
     lineHeight: moderateScale(48),
     fontWeight: "800",
     marginRight: moderateScale(8),
     minWidth: moderateScale(26),
   },
-  countOff: { color: "#64748B" },
+  countOff: { color: Colors.textMuted },
   unit: {
-    color: Colors.primaryAccent,
+    color: Colors.primary,
     fontSize: moderateScale(18),
     fontWeight: "700",
     marginBottom: moderateScale(6),
@@ -300,21 +302,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radius.round,
-    backgroundColor: "rgba(96,165,250,0.12)",
+    backgroundColor: Colors.primaryLight,
   },
-  bestText: { color: Colors.primaryAccent, fontSize: 11, fontWeight: "700" },
+  bestText: { color: Colors.primaryDark, fontSize: 11, fontWeight: "700" },
 
   weekBox: {
     marginTop: moderateScale(14),
     borderRadius: Radius.lg,
-    backgroundColor: Colors.chartSurface,
+    backgroundColor: Colors.background,
     paddingVertical: moderateScale(10),
     paddingHorizontal: moderateScale(6),
   },
   weekRow: { flexDirection: "row", position: "relative" },
   col: { flex: 1, alignItems: "center" },
-  dayLabel: { color: "#94A3B8", fontSize: 11, fontWeight: "600", marginBottom: 6 },
-  dayLabelToday: { color: Colors.white },
+  dayLabel: { color: Colors.textMuted, fontSize: 11, fontWeight: "600", marginBottom: 6 },
+  dayLabelToday: { color: Colors.primaryDark },
   cellBox: { width: DAY, height: DAY, alignItems: "center", justifyContent: "center" },
   cell: {
     width: DAY,
@@ -322,20 +324,20 @@ const styles = StyleSheet.create({
     borderRadius: DAY / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: CELL,
   },
   cellDone: { backgroundColor: "transparent" },
   cellToday: { backgroundColor: Colors.primary },
-  cellLone: { backgroundColor: TRACK },
-  cellText: { color: "#CBD5E1", fontSize: 13, fontWeight: "600" },
-  cellTextMissed: { color: "#64748B", textDecorationLine: "line-through" },
+  cellLone: { backgroundColor: LONE },
+  cellText: { color: Colors.textSecondary, fontSize: 13, fontWeight: "600" },
+  cellTextMissed: { color: Colors.textMuted, textDecorationLine: "line-through" },
   pulse: {
     position: "absolute",
     width: DAY,
     height: DAY,
     borderRadius: DAY / 2,
     borderWidth: 2,
-    borderColor: Colors.primaryAccent,
+    borderColor: Colors.primary,
   },
   runPill: {
     position: "absolute",
@@ -348,12 +350,12 @@ const styles = StyleSheet.create({
 
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: Colors.border,
     marginTop: moderateScale(12),
     marginBottom: moderateScale(10),
   },
   message: {
-    color: "#E2E8F0",
+    color: Colors.textSecondary,
     fontSize: 13,
     fontWeight: "500",
     textAlign: "center",
