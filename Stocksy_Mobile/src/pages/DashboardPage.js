@@ -27,6 +27,7 @@ import MiniHoldingCard from "../components/MiniHoldingCard";
 import UpdateBanner from "../components/UpdateBanner";
 import InstallPrompt from "../components/InstallPrompt";
 import StreakCard from "../components/StreakCard";
+import StreakWelcomeOverlay from "../components/StreakWelcomeOverlay";
 import useStreak from "../hooks/useStreak";
 import { usePortfolio } from "../hooks/usePortfolio";
 // import Search from "./SearchPage";
@@ -243,6 +244,12 @@ const DashboardPage = ({ navigation }) => {
   // Daily streak. Tabs stay mounted across midnight, so re-check on focus too.
   const streak = useStreak();
   const recheckStreak = streak.recheck;
+  // The "Day N" welcome shows once per new day. Remembering the day we already
+  // showed (not just a yes/no) lets it play again if the app is left open past
+  // midnight.
+  const [welcomeSeenKey, setWelcomeSeenKey] = useState(null);
+  const showWelcome =
+    !streak.loading && !!streak.celebrateKey && welcomeSeenKey !== streak.celebrateKey;
   useFocusEffect(
     React.useCallback(() => {
       recheckStreak();
@@ -506,7 +513,9 @@ const DashboardPage = ({ navigation }) => {
       </View>
 
       {/* ── Daily streak ───────────────────────────────────────────────── */}
-      {!streak.loading && (
+      {/* Held back while the welcome plays so its count-up isn't wasted
+          behind the dim layer. */}
+      {!streak.loading && !showWelcome && (
         <StreakCard
           style={{ marginTop: moderateScale(16) }}
           streak={streak.streak}
@@ -577,6 +586,15 @@ const DashboardPage = ({ navigation }) => {
         style={{ marginTop: moderateScale(24) }}
       />
       {SMALL_CAP_KEYS.map(renderLiveStock)}
+
+      {/* First open of the day: dim screen, big flame, "Day N", then fades. */}
+      {showWelcome && (
+        <StreakWelcomeOverlay
+          day={streak.streak}
+          message={streak.message}
+          onDone={() => setWelcomeSeenKey(streak.celebrateKey)}
+        />
+      )}
     </Screen>
   );
 };

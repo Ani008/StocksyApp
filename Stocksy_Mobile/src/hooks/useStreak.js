@@ -44,7 +44,7 @@ export default function useStreak() {
   const [loading, setLoading] = useState(true);
   // Set only when *this* session recorded a new day, so the UI can celebrate
   // once and not on every re-render or revisit.
-  const [event, setEvent] = useState({ celebrate: false, lostStreak: 0, milestone: 0 });
+  const [event, setEvent] = useState({ dayKey: null, lostStreak: 0, milestone: 0 });
 
   const storageKey = useRef(null);
   const stateRef = useRef(EMPTY_STREAK);
@@ -75,7 +75,7 @@ export default function useStreak() {
 
       if (result.isNewDay) {
         setEvent({
-          celebrate: true,
+          dayKey: todayKey,
           lostStreak: result.lostStreak,
           milestone: result.milestone,
         });
@@ -122,7 +122,10 @@ export default function useStreak() {
     longest: Math.max(state.longest, current),
     week,
     message,
-    celebrate: event.celebrate,
+    // Set to that day's key when this session recorded a new day. A new key
+    // per day lets the UI celebrate each day once, even if the app stays open.
+    celebrateKey: event.dayKey,
+    celebrate: event.dayKey !== null,
     milestone: event.milestone,
     recheck,
   };
