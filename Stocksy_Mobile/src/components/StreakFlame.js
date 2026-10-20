@@ -22,6 +22,9 @@ const MID =
 const CORE =
   "M50 72 C 51 84, 61 88, 61 99 C 61 106, 56 110, 50 110 C 44 110, 39 106, 39 99 C 39 92, 45 88, 47 82 C 48 79, 49 76, 50 72 Z";
 
+// Shared with FlameIcon so the small icon is the same flame.
+export const FLAME_PATHS = { outer: OUTER, mid: MID, core: CORE, width: VIEW_W, height: VIEW_H };
+
 const LIT = {
   outer: [Colors.primaryAccent, Colors.primary, Colors.primaryDark],
   mid: [Colors.primaryLight, Colors.primaryAccent],

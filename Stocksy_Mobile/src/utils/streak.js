@@ -6,9 +6,9 @@
  * toward the streak once the person has opened Stocksy on it (a check-in).
  */
 
-// How many past check-in days we keep. Plenty for the week strip now and a
-// month-view calendar on the full page later.
-export const HISTORY_LIMIT = 120;
+// How many past check-in days we keep. The year calendar shows up to 371 days
+// (53 weeks), so this has to stay above that or its left edge would be empty.
+export const HISTORY_LIMIT = 400;
 
 export const MILESTONES = [3, 7, 14, 30, 60, 100, 200, 365];
 
@@ -185,4 +185,85 @@ export function getStreakMessage({ current = 0, lostStreak = 0, milestone = 0 } 
   if (current === 2) return "Two in a row. Momentum is building.";
   if (current < 7) return "You're on fire! Keep the chain going.";
   return `${current} days and counting. Don't break the chain.`;
+}
+
+// ── Year calendar (GitHub-style contribution grid) ──────────────────────────
+
+export const YEAR_WEEKS = 53;
+export const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * Turn an activity count for one day into a shade, 0 (none) to 4 (most).
+ * Today a check-in is the only activity, so a checked-in day is level 3; more
+ * kinds of activity can feed `count` later and reach the darker shades.
+ */
+export function levelForCount(count) {
+  if (!count || count <= 0) return 0;
+  return Math.min(4, 2 + count);
+}
+
+/**
+ * The last 53 weeks ending with the week that contains `todayKey`, as columns
+ * of 7 days (Monday at the top, matching the week strip).
+ *
+ *   activity   array of "YYYY-MM-DD" keys, one per activity (repeat a key for
+ *              more than one on that day)
+ *
+ * Returns { weeks, months, total }:
+ *   weeks[col][row] = { key, count, level, future }   future = after today
+ *   months          = [{ col, label }] where a new month's first week starts
+ *   total           = number of days with any activity in the range
+ */
+export function getYearGrid(todayKey, activity = [], weekCount = YEAR_WEEKS) {
+  if (!isValidKey(todayKey)) return { weeks: [], months: [], total: 0 };
+
+  const counts = {};
+  for (const key of activity) {
+    if (isValidKey(key)) counts[key] = (counts[key] || 0) + 1;
+  }
+
+  const dow = new Date(keyToUtcMs(todayKey)).getUTCDay(); // 0 = Sunday
+  const thisMonday = shiftKey(todayKey, -((dow + 6) % 7));
+  const firstMonday = shiftKey(thisMonday, -7 * (weekCount - 1));
+
+  let total = 0;
+  const weeks = [];
+  for (let col = 0; col < weekCount; col++) {
+    const monday = shiftKey(firstMonday, col * 7);
+    const days = [];
+    for (let row = 0; row < 7; row++) {
+      const key = shiftKey(monday, row);
+      const future = key > todayKey;
+      const count = future ? 0 : counts[key] || 0;
+      if (count > 0) total += 1;
+      days.push({ key, count, level: levelForCount(count), future });
+    }
+    weeks.push(days);
+  }
+
+  // Label a column where a new month begins. The first column is labelled too,
+  // unless the next label is so close that the two would overlap.
+  const months = [];
+  let lastMonth = -1;
+  weeks.forEach((days, col) => {
+    const month = Number(days[0].key.slice(5, 7)) - 1;
+    if (month !== lastMonth) {
+      months.push({ col, label: MONTH_NAMES[month] });
+      lastMonth = month;
+    }
+  });
+  if (months.length > 1 && months[1].col - months[0].col < 3) months.shift();
+
+  return { weeks, months, total };
+}
+
+/** "Tue, 14 Oct 2026" for a "YYYY-MM-DD" key. */
+export function formatDateKey(key) {
+  if (!isValidKey(key)) return "";
+  const dt = new Date(keyToUtcMs(key));
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return `${days[dt.getUTCDay()]}, ${dt.getUTCDate()} ${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
 }

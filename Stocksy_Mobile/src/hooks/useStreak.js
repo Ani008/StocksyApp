@@ -140,6 +140,8 @@ export default function useStreak({ readOnly = false } = {}) {
     streak: current,
     longest: Math.max(state.longest, current),
     week,
+    history: state.history,
+    today,
     message,
     // Set to that day's key when this session recorded a new day. A new key
     // per day lets the UI celebrate each day once, even if the app stays open.

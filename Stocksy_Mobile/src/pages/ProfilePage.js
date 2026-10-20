@@ -23,8 +23,7 @@ import { StatusBar } from "expo-status-bar";
 import authService from "../../services/authService";
 import { showToast } from "../../services/uiBridge";
 import DeleteAccountModal from "../components/DeleteAccountModal";
-import StreakCard from "../components/StreakCard";
-import useStreak from "../hooks/useStreak";
+import FlameIcon from "../components/FlameIcon";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const APP_VERSION = "1.0.0";
@@ -45,19 +44,11 @@ const ProfilePage = ({ navigation }) => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
-  // Display only: the Home screen is the one that records the daily check-in.
-  const streak = useStreak({ readOnly: true });
-  const refreshStreak = streak.recheck;
-
   useEffect(() => {
-    const onFocus = () => {
-      loadUser();
-      refreshStreak();
-    };
-    const unsubscribe = navigation.addListener("focus", onFocus);
+    const unsubscribe = navigation.addListener("focus", loadUser);
     loadUser();
     return unsubscribe;
-  }, [navigation, refreshStreak]);
+  }, [navigation]);
 
   const loadUser = async () => {
     try {
@@ -177,7 +168,20 @@ const ProfilePage = ({ navigation }) => {
         <View
           style={[styles.hero, { paddingTop: insets.top + moderateScale(16) }]}
         >
-          <Text style={styles.heroTitle}>Profile</Text>
+          <View style={styles.heroTopRow}>
+            <Text style={styles.heroTitle}>Profile</Text>
+
+            <TouchableOpacity
+              style={styles.streakBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate("Streak")}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Open your streak"
+            >
+              <FlameIcon size={moderateScale(24)} />
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.profileRow}>
             <View style={styles.avatar}>
@@ -507,18 +511,6 @@ const ProfilePage = ({ navigation }) => {
             </View>
           )}
 
-          {/* Daily streak */}
-          {!streak.loading && (
-            <StreakCard
-              style={styles.streakCard}
-              streak={streak.streak}
-              longest={streak.longest}
-              week={streak.week}
-              message={streak.message}
-              celebrate={false}
-            />
-          )}
-
           {/* Logout */}
           <TouchableOpacity
             style={styles.logoutCard}
@@ -576,11 +568,30 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 32,
     marginBottom: moderateScale(20),
   },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: moderateScale(20),
+  },
   heroTitle: {
     fontSize: fontScale(Typography.h2),
     fontWeight: "800",
     color: Colors.white,
-    marginBottom: moderateScale(20),
+  },
+  // Round white button with the flame, opens the Streak page.
+  streakBtn: {
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
+    backgroundColor: Colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: Colors.black,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   profileRow: {
     flexDirection: "row",
@@ -832,9 +843,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.primary,
   },
-
-  // ── Streak ────────────────────────────────────────────────────────────
-  streakCard: { marginTop: moderateScale(6), marginBottom: moderateScale(8) },
 
   // ── Logout ────────────────────────────────────────────────────────────
   logoutCard: {

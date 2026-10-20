@@ -9,6 +9,10 @@ import {
   getDoneRuns,
   getStreakMessage,
   getWeek,
+  getYearGrid,
+  levelForCount,
+  formatDateKey,
+  YEAR_WEEKS,
   sanitizeState,
   shiftKey,
   toDateKey,
@@ -199,4 +203,86 @@ test("getStreakMessage covers fresh, lost, rising and milestone states", () => {
   assert.match(getStreakMessage({ current: 7, milestone: 7 }), /full week/i);
   assert.match(getStreakMessage({ current: 9 }), /9 days and counting/);
   assert.match(getStreakMessage({ current: 365, milestone: 365 }), /year/i);
+});
+
+// ── year calendar ───────────────────────────────────────────────────────────
+test("levelForCount: none is 0, a check-in is 3, more activity darkens up to 4", () => {
+  assert.equal(levelForCount(0), 0);
+  assert.equal(levelForCount(undefined), 0);
+  assert.equal(levelForCount(1), 3);
+  assert.equal(levelForCount(2), 4);
+  assert.equal(levelForCount(9), 4);
+});
+
+test("getYearGrid is 53 columns of 7, Monday first, ending in today's week", () => {
+  const { weeks } = getYearGrid("2026-10-21", []); // a Wednesday
+  assert.equal(weeks.length, YEAR_WEEKS);
+  assert.ok(weeks.every((w) => w.length === 7));
+  // every column starts on a Monday, exactly 7 days apart
+  for (let c = 0; c < weeks.length; c++) {
+    assert.equal(new Date(weeks[c][0].key + "T00:00:00Z").getUTCDay(), 1);
+    if (c) assert.equal(dayDiff(weeks[c - 1][0].key, weeks[c][0].key), 7);
+  }
+  const last = weeks[YEAR_WEEKS - 1];
+  assert.equal(last[0].key, "2026-10-19");
+  assert.equal(last[2].key, "2026-10-21"); // Wednesday = row 2
+  assert.deepEqual(last.map((d) => d.future), [false, false, false, true, true, true, true]);
+  assert.equal(weeks[0][0].key, shiftKey("2026-10-19", -7 * 52));
+});
+
+test("getYearGrid when today is a Monday or a Sunday", () => {
+  const mon = getYearGrid("2026-10-19", []).weeks.at(-1);
+  assert.deepEqual(mon.map((d) => d.future), [false, true, true, true, true, true, true]);
+  const sun = getYearGrid("2026-10-25", []).weeks.at(-1);
+  assert.equal(sun.every((d) => !d.future), true);
+  assert.equal(sun[6].key, "2026-10-25");
+});
+
+test("getYearGrid marks activity, counts days once and ignores bad keys and the future", () => {
+  const { weeks, total } = getYearGrid("2026-10-21", [
+    "2026-10-19",
+    "2026-10-19", // two things on one day -> still one active day
+    "2026-10-20",
+    "2026-10-22", // in the future: not counted
+    "garbage",
+    "2024-01-01", // older than the window
+  ]);
+  const last = weeks.at(-1);
+  assert.equal(last[0].count, 2);
+  assert.equal(last[0].level, 4);
+  assert.equal(last[1].level, 3);
+  assert.equal(last[3].count, 0); // future day stays empty
+  assert.equal(total, 2);
+});
+
+test("getYearGrid month labels sit where a month starts and never overlap", () => {
+  const { months } = getYearGrid("2026-10-21", []);
+  assert.ok(months.length >= 12 && months.length <= 13);
+  for (let i = 1; i < months.length; i++) {
+    assert.ok(months[i].col - months[i - 1].col >= 3, "labels too close");
+  }
+  assert.equal(months.at(-1).label, "Oct");
+  // labels run in calendar order
+  const order = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  for (let i = 1; i < months.length; i++) {
+    const prev = order.indexOf(months[i - 1].label);
+    assert.equal(order.indexOf(months[i].label), (prev + 1) % 12);
+  }
+});
+
+test("getYearGrid copes with a year boundary and a leap day", () => {
+  const { weeks } = getYearGrid("2028-03-01", ["2028-02-29"]);
+  const flat = weeks.flat();
+  assert.ok(flat.some((d) => d.key === "2028-02-29" && d.level === 3));
+  assert.equal(new Set(flat.map((d) => d.key)).size, flat.length); // no repeats
+  assert.deepEqual(getYearGrid("bad"), { weeks: [], months: [], total: 0 });
+});
+
+test("formatDateKey", () => {
+  assert.equal(formatDateKey("2026-10-14"), "Wed, 14 Oct 2026");
+  assert.equal(formatDateKey("nope"), "");
+});
+
+test("history is kept long enough to fill a full-year calendar", () => {
+  assert.ok(HISTORY_LIMIT >= YEAR_WEEKS * 7);
 });
