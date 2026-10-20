@@ -27,6 +27,7 @@ import MiniHoldingCard from "../components/MiniHoldingCard";
 import UpdateBanner from "../components/UpdateBanner";
 import InstallPrompt from "../components/InstallPrompt";
 import StreakWelcomeOverlay from "../components/StreakWelcomeOverlay";
+import NiftyPredictionCard from "../components/NiftyPredictionCard";
 import useStreak from "../hooks/useStreak";
 import { usePortfolio } from "../hooks/usePortfolio";
 // import Search from "./SearchPage";
@@ -510,6 +511,13 @@ const DashboardPage = ({ navigation }) => {
           </View>
         </Card>
       </View>
+
+      {/* Daily Nifty call: slide left (down) or right (up), settles at the 3:30 PM close. */}
+      <NiftyPredictionCard
+        style={{ marginTop: moderateScale(20) }}
+        niftyLtp={niftyLtp}
+        niftyChange={niftyChange}
+      />
 
       <UpdateBanner style={{ marginTop: moderateScale(16) }} />
       {/* Web only: "Install Stocksy" card (renders nothing on native / once installed) */}
