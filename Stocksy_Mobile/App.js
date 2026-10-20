@@ -68,6 +68,7 @@ import OrderHistoryPage from "./src/pages/OrderHistoryPage";
 import JournalScreen from "./src/pages/JournalScreen";
 import AlertsPage from "./src/pages/AlertsPage";
 import WatchlistPage from "./src/pages/WatchlistPage";
+import StreakPage from "./src/pages/StreakPage";
 
 // ─── Tab screens ──────────────────────────────────────────────────────────────
 import DashboardPage from "./src/pages/DashboardPage";
@@ -323,6 +324,7 @@ function AppContent() {
             <Stack.Screen name="Journal" component={JournalScreen} />
             <Stack.Screen name="Alerts" component={AlertsPage} />
             <Stack.Screen name="Watchlist" component={WatchlistPage} />
+            <Stack.Screen name="Streak" component={StreakPage} />
 
             <Stack.Screen name="Search" component={SearchPage} />
             <Stack.Screen name="StockDetail" component={StockDetailPage} />

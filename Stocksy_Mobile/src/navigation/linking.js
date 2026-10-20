@@ -55,6 +55,7 @@ const config = {
     Journal: "journal",
     Alerts: "alerts",
     Watchlist: "watchlist",
+    Streak: "streak",
     Search: "search",
     StockDetail: "stock",
     BuyOrder: "order",
