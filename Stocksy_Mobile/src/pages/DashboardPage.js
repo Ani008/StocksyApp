@@ -26,6 +26,8 @@ import WatchlistItem from "../components/WatchlistItem";
 import MiniHoldingCard from "../components/MiniHoldingCard";
 import UpdateBanner from "../components/UpdateBanner";
 import InstallPrompt from "../components/InstallPrompt";
+import StreakCard from "../components/StreakCard";
+import useStreak from "../hooks/useStreak";
 import { usePortfolio } from "../hooks/usePortfolio";
 // import Search from "./SearchPage";
 
@@ -236,6 +238,15 @@ const DashboardPage = ({ navigation }) => {
     React.useCallback(() => {
       refresh();
     }, [refresh]),
+  );
+
+  // Daily streak. Tabs stay mounted across midnight, so re-check on focus too.
+  const streak = useStreak();
+  const recheckStreak = streak.recheck;
+  useFocusEffect(
+    React.useCallback(() => {
+      recheckStreak();
+    }, [recheckStreak]),
   );
 
   useEffect(() => {
@@ -493,6 +504,18 @@ const DashboardPage = ({ navigation }) => {
           </View>
         </Card>
       </View>
+
+      {/* ── Daily streak ───────────────────────────────────────────────── */}
+      {!streak.loading && (
+        <StreakCard
+          style={{ marginTop: moderateScale(16) }}
+          streak={streak.streak}
+          longest={streak.longest}
+          week={streak.week}
+          message={streak.message}
+          celebrate={streak.celebrate}
+        />
+      )}
 
       <UpdateBanner style={{ marginTop: moderateScale(16) }} />
       {/* Web only: "Install Stocksy" card (renders nothing on native / once installed) */}
