@@ -59,10 +59,8 @@ const springTo = (value, toValue, extra = {}) =>
  * Props:
  *   niftyLtp     number  — live Nifty price, shown on the card (optional)
  *   niftyChange  { label, isPositive } — today's move, shown beside it (optional)
- *   onDragStateChange  func(bool) — true while the thumb is held, false when let go.
- *                      A parent that scrolls sideways uses it to pause its own scrolling.
  */
-export default function NiftyPredictionCard({ niftyLtp, niftyChange, style, onDragStateChange }) {
+export default function NiftyPredictionCard({ niftyLtp, niftyChange, style }) {
   const { state, phase, loading, failed, submitting, remainingMs, streak, prediction, submit, reload } =
     useNiftyPrediction();
 
@@ -92,8 +90,6 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style, onDr
   maxRef.current = maxTravel;
   const canSlideRef = useRef(canSlide);
   canSlideRef.current = canSlide;
-  const dragCbRef = useRef(onDragStateChange);
-  dragCbRef.current = onDragStateChange;
   const submitRef = useRef(submit);
   submitRef.current = submit;
   const committing = useRef(false);
@@ -161,7 +157,6 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style, onDr
       onMoveShouldSetPanResponderCapture: () => canSlideRef.current && !committing.current,
       onPanResponderGrant: () => {
         dragging.current = true;
-        if (dragCbRef.current) dragCbRef.current(true);
         Animated.spring(pop, { toValue: 1.08, useNativeDriver: NATIVE, friction: 6 }).start();
       },
       onPanResponderMove: (_, g) => {
@@ -171,7 +166,6 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style, onDr
       },
       onPanResponderRelease: (_, g) => {
         dragging.current = false;
-        if (dragCbRef.current) dragCbRef.current(false);
         springTo(pop, 1).start();
         if (!canSlideRef.current) {
           springTo(x, 0).start();
@@ -185,7 +179,6 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style, onDr
       onPanResponderTerminationRequest: () => false,
       onPanResponderTerminate: () => {
         dragging.current = false;
-        if (dragCbRef.current) dragCbRef.current(false);
         springTo(pop, 1).start();
         if (!committing.current) springTo(x, 0).start();
       },

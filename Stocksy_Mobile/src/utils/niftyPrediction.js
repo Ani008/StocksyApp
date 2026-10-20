@@ -106,7 +106,7 @@ export function getCardCopy({ state, phase, remainingMs = null }) {
   switch (phase) {
     case "OPEN":
       return {
-        eyebrow: "DAILY CHALLENGE",
+        eyebrow: "DAILY CALL",
         title: "Where's Nifty heading today?",
         subtitle: "Slide to lock in your call. No take-backs.",
         hint: left ? `Locks in ${left}` : `Locks at ${lock}`,
@@ -115,7 +115,7 @@ export function getCardCopy({ state, phase, remainingMs = null }) {
       };
     case "BEFORE_OPEN":
       return {
-        eyebrow: "DAILY CHALLENGE",
+        eyebrow: "DAILY CALL",
         title: "Opening bell soon",
         subtitle: "Calls open with the market at 9:15 AM.",
         hint: left ? `Opens in ${left}` : "Opens at 9:15 AM",
@@ -124,7 +124,7 @@ export function getCardCopy({ state, phase, remainingMs = null }) {
       };
     case "CLOSED_DAY":
       return {
-        eyebrow: "DAILY CHALLENGE",
+        eyebrow: "DAILY CALL",
         title: "Markets are resting",
         subtitle: "Your next call opens on the next trading day.",
         hint: "No session today",
@@ -133,7 +133,7 @@ export function getCardCopy({ state, phase, remainingMs = null }) {
       };
     case "LOCKED":
       return {
-        eyebrow: "DAILY CHALLENGE",
+        eyebrow: "DAILY CALL",
         title: "Today's window has closed",
         subtitle: `Calls lock at ${lock}. Catch tomorrow's open.`,
         hint: "See you tomorrow",
@@ -198,7 +198,7 @@ export function getCardCopy({ state, phase, remainingMs = null }) {
     }
     default:
       return {
-        eyebrow: "DAILY CHALLENGE",
+        eyebrow: "DAILY CALL",
         title: "Where's Nifty heading today?",
         subtitle: "Loading today's call…",
         hint: "",

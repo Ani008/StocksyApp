@@ -28,6 +28,7 @@ import UpdateBanner from "../components/UpdateBanner";
 import InstallPrompt from "../components/InstallPrompt";
 import StreakWelcomeOverlay from "../components/StreakWelcomeOverlay";
 import NiftyPredictionCard from "../components/NiftyPredictionCard";
+import DailyChallengeCard from "../components/DailyChallengeCard";
 import HeroCarousel from "../components/HeroCarousel";
 import useStreak from "../hooks/useStreak";
 import { usePortfolio } from "../hooks/usePortfolio";
@@ -223,9 +224,6 @@ const DashboardPage = ({ navigation }) => {
     refreshRef.current = refresh;
   }, [refresh]);
   const [user, setUser] = useState(null);
-  // True while the prediction slider is being dragged, so that drag can't also
-  // turn into a swipe of the hero carousel.
-  const [sliderDragging, setSliderDragging] = useState(false);
 
   // Total Assets card: Delivery vs Intraday toggle. Defaults to Delivery
   // since that's the "real" long-term holding value people expect to see
@@ -387,7 +385,7 @@ const DashboardPage = ({ navigation }) => {
         </View> */}
 
         {/* ── Main Asset Card ─────────────────────────────────────────────── */}
-        <HeroCarousel scrollEnabled={!sliderDragging}>
+        <HeroCarousel>
           <Card style={styles.mainCard}>
             <TouchableOpacity
               activeOpacity={0.8}
@@ -515,15 +513,17 @@ const DashboardPage = ({ navigation }) => {
               )}
             </View>
           </Card>
-          {/* Daily challenge: slide left (down) or right (up); settles at the 3:30 PM close. */}
-          <NiftyPredictionCard
-            style={styles.heroPage}
-            niftyLtp={niftyLtp}
-            niftyChange={niftyChange}
-            onDragStateChange={setSliderDragging}
-          />
+          {/* Page 2: the Daily Challenge card (static for now). */}
+          <DailyChallengeCard style={styles.heroPage} />
         </HeroCarousel>
       </View>
+
+      {/* Daily Nifty call: slide left (down) or right (up), settles at the 3:30 PM close. */}
+      <NiftyPredictionCard
+        style={{ marginTop: moderateScale(20) }}
+        niftyLtp={niftyLtp}
+        niftyChange={niftyChange}
+      />
 
       <UpdateBanner style={{ marginTop: moderateScale(16) }} />
       {/* Web only: "Install Stocksy" card (renders nothing on native / once installed) */}
