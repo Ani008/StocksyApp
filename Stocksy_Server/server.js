@@ -11,6 +11,7 @@ require("./config/postgres");
 const { initWebSocket } = require("./services/websocketService");
 const { scheduleAlertWatcher } = require("./services/alertWatcherService");
 const { scheduleMarketOpenNotifier } = require("./services/marketOpenNotifier");
+const { scheduleDailySummaries } = require("./services/dailySummaryService");
 const { generalLimiter } = require("./middleware/rateLimiter");
 const { securityHeaders } = require("./middleware/securityHeaders");
 
@@ -105,6 +106,7 @@ app.use("/api/app", require("./routes/appVersion"));   // <-- add this
 initWebSocket(server);
 scheduleAlertWatcher(); // starts the every-minute GTT/price-alert cron job
 scheduleMarketOpenNotifier(); // daily "Nifty opened +x%, your portfolio is +₹y" push
+scheduleDailySummaries(); // 9:20am "Nifty opened…" + 3:35pm "Nifty closed…" portfolio push
 
 // ─── 404 — unmatched routes ────────────────────────────────────────────────────
 // Without this, an unmatched route falls through to Express's default HTML

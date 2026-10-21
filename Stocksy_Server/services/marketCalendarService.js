@@ -208,6 +208,7 @@ module.exports = {
   getClosedReason,
   getNextMarketOpen,
   getMarketStatus,
+  getISTParts,
   MARKET_OPEN_HHMM,
   MARKET_CLOSE_HHMM,
 };
