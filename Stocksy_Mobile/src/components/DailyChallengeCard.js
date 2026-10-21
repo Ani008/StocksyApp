@@ -2,17 +2,9 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 // import { Ionicons } from "@expo/vector-icons"; // avatars (parked, see below)
-import Svg, { Circle, Defs, G, LinearGradient as SvgGradient, Path, Stop } from "react-native-svg";
+import FloatingCandles from "./FloatingCandles";
 
 import { Colors, fontScale, moderateScale } from "../theme";
-
-// Warm accent for the flower. It is the app's own amber (Colors.warning) in
-// lighter and darker steps, so it pops against the blue card the way the
-// yellow flower does against the purple card in the design.
-const PETAL_LIGHT = "#FDE68A";
-const PETAL_MID = "#FBBF24";
-const PETAL_DEEP = Colors.warning; // "#F59E0B"
-const PETAL_EDGE = "#B45309";
 
 // ── Avatars: PARKED until the avatar library exists ──────────────────────────
 // Everything for the avatar row is commented out, not deleted. To bring it
@@ -33,66 +25,27 @@ const PETAL_EDGE = "#B45309";
 // "08:00 AM" must wrap as one unit, never "08:00" / "AM" on two lines.
 const keepTimeTogether = (text) => String(text).replace(/(\d{1,2}:\d{2}) (AM|PM)/gi, "$1\u00A0$2");
 
-// SVG ids are global in the browser, so each flower needs its own.
-let flowerCount = 0;
-
-// One teardrop petal pointing up from the centre of a 100x100 box.
-const PETAL = "M50 55 C 33 48, 27 24, 37 11 C 43 3, 57 3, 63 11 C 73 24, 67 48, 50 55 Z";
-const PETAL_SHINE = "M42 40 C 37 31, 38 20, 44 14 C 48 11, 52 12, 52 17 C 52 26, 49 35, 42 40 Z";
-
-/** A chunky six-petal 3D flower, drawn as vector shapes (no image file needed). */
-function Flower({ size }) {
-  const id = React.useRef(`flower${++flowerCount}`).current;
-  const petals = [0, 60, 120, 180, 240, 300];
-
-  return (
-    <Svg width={size} height={size} viewBox="0 0 100 100">
-      <Defs>
-        <SvgGradient id={`${id}-petal`} x1="0.2" y1="0" x2="0.8" y2="1">
-          <Stop offset="0" stopColor={PETAL_LIGHT} />
-          <Stop offset="0.55" stopColor={PETAL_MID} />
-          <Stop offset="1" stopColor={PETAL_DEEP} />
-        </SvgGradient>
-        <SvgGradient id={`${id}-core`} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor={PETAL_LIGHT} />
-          <Stop offset="1" stopColor={PETAL_DEEP} />
-        </SvgGradient>
-      </Defs>
-
-      {petals.map((deg) => (
-        <G key={deg} rotation={deg} origin="50, 50">
-          <Path d={PETAL} fill={`url(#${id}-petal)`} stroke={PETAL_EDGE} strokeOpacity={0.28} strokeWidth={0.8} />
-          <Path d={PETAL_SHINE} fill="#FFFFFF" opacity={0.38} />
-        </G>
-      ))}
-
-      <Circle cx="50" cy="50" r="12" fill={`url(#${id}-core)`} stroke={PETAL_EDGE} strokeOpacity={0.3} strokeWidth={0.8} />
-      <Circle cx="46.5" cy="46" r="3.6" fill="#FFFFFF" opacity={0.55} />
-    </Svg>
-  );
-}
-
 /**
  * DailyChallengeCard — the static "Daily Challenge" banner.
  *
  * Nothing is planned for it yet, so it is display-only: a title, a line of text
- * and the flower. (The avatar row is parked until the avatar library exists.)
+ * and a pair of floating, breathing candlesticks. (The avatar row is parked
+ * until the avatar library exists.)
  * When challenges become real, this is the card that will carry them.
  *
  * Props:
- *   title     string  — default "Daily Challenge"
+ *   title     string  — default "Daily Challenge\n& Games" (\n starts a new line)
  *   subtitle  string  — default "Do your plan before 08:00 AM"
  */
 export default function DailyChallengeCard({
-  title = "Daily Challenge",
+  title = "Daily Challenge\n& Games",
   subtitle = "Do your plan before 08:00 AM",
   // avatars = DEFAULT_AVATARS, // [{ bg, icon }] faces in the avatar row (parked)
   // extra = 4, // the "+N" bubble after the avatars, 0 hides it (parked)
   style,
 }) {
-  // "Daily Challenge" is set on two lines, like the design.
-  const [first, ...rest] = String(title).split(" ");
-  const lines = rest.length ? [first, rest.join(" ")] : [first];
+  // A "\n" in the title starts a new line.
+  const lines = String(title).split("\n");
 
   return (
     <LinearGradient
@@ -101,10 +54,8 @@ export default function DailyChallengeCard({
       end={{ x: 1, y: 1 }}
       style={[styles.card, style]}
     >
-      {/* flower: large, tilted, and cropped by the card's right edge */}
-      <View pointerEvents="none" style={styles.flower}>
-        <Flower size={moderateScale(190)} />
-      </View>
+      {/* floating red + green candlesticks, vertically centred on the right */}
+      <FloatingCandles style={styles.candles} />
 
       <View style={styles.textBlock}>
         <Text style={styles.title} accessibilityRole="header">
@@ -141,21 +92,21 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     justifyContent: "space-between",
     minHeight: moderateScale(240),
+    backgroundColor: Colors.card,
   },
-  flower: {
+  candles: {
     position: "absolute",
-    right: -moderateScale(46),
-    top: -moderateScale(8),
-    transform: [{ rotate: "14deg" }],
+    right: moderateScale(18),
+    top: moderateScale(8),
   },
   textBlock: {
-    // keep the words clear of the flower
-    maxWidth: "62%",
+    // keep the words clear of the candles
+    maxWidth: "58%",
   },
   title: {
     color: Colors.text,
-    fontSize: fontScale(32),
-    lineHeight: fontScale(37),
+    fontSize: fontScale(27),
+    lineHeight: fontScale(32),
     fontWeight: "800",
     letterSpacing: -0.8,
   },
