@@ -5,7 +5,7 @@ module.exports = {
       name: "stocksy-api",
       script: "server.js",
       cwd: "./Stocksy_Server",
-      env: { NODE_ENV: "production", PORT: 5050 }
+      env: { NODE_ENV: "production", PORT: 5051 }
     },
     {
       name: "stocksy-order-worker",
