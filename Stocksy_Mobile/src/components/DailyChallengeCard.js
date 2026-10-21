@@ -1,7 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+// import { Ionicons } from "@expo/vector-icons"; // avatars (parked, see below)
 import Svg, { Circle, Defs, G, LinearGradient as SvgGradient, Path, Stop } from "react-native-svg";
 
 import { Colors, fontScale, moderateScale } from "../theme";
@@ -14,16 +14,21 @@ const PETAL_MID = "#FBBF24";
 const PETAL_DEEP = Colors.warning; // "#F59E0B"
 const PETAL_EDGE = "#B45309";
 
-const AVATAR = moderateScale(40);
-const AVATAR_OVERLAP = moderateScale(12);
-
-// Default faces. There are no photos yet, so each is a coloured circle from the
-// app's palette; pass `avatars` (image sources) to show real pictures later.
-const DEFAULT_AVATARS = [
-  { bg: Colors.primary, icon: "person" },
-  { bg: Colors.gain, icon: "person" },
-  { bg: Colors.warning, icon: "person" },
-];
+// ── Avatars: PARKED until the avatar library exists ──────────────────────────
+// Everything for the avatar row is commented out, not deleted. To bring it
+// back: uncomment this block, the Ionicons import, the `avatars` / `extra`
+// props, the JSX row near the bottom, and the avatar styles at the end.
+//
+// const AVATAR = moderateScale(40);
+// const AVATAR_OVERLAP = moderateScale(12);
+//
+// // Default faces. There are no photos yet, so each is a coloured circle from the
+// // app's palette; swap in real pictures from the avatar library later.
+// const DEFAULT_AVATARS = [
+//   { bg: Colors.primary, icon: "person" },
+//   { bg: Colors.gain, icon: "person" },
+//   { bg: Colors.warning, icon: "person" },
+// ];
 
 // "08:00 AM" must wrap as one unit, never "08:00" / "AM" on two lines.
 const keepTimeTogether = (text) => String(text).replace(/(\d{1,2}:\d{2}) (AM|PM)/gi, "$1\u00A0$2");
@@ -70,21 +75,19 @@ function Flower({ size }) {
 /**
  * DailyChallengeCard — the static "Daily Challenge" banner.
  *
- * Nothing is planned for it yet, so it is display-only: a title, a line of text,
- * a row of avatars and the flower. When challenges become real, this is the
- * card that will carry them.
+ * Nothing is planned for it yet, so it is display-only: a title, a line of text
+ * and the flower. (The avatar row is parked until the avatar library exists.)
+ * When challenges become real, this is the card that will carry them.
  *
  * Props:
  *   title     string  — default "Daily Challenge"
  *   subtitle  string  — default "Do your plan before 08:00 AM"
- *   avatars   array   — [{ bg, icon }] placeholder faces (default: three)
- *   extra     number  — the "+N" bubble after the avatars (default 4, 0 hides it)
  */
 export default function DailyChallengeCard({
   title = "Daily Challenge",
   subtitle = "Do your plan before 08:00 AM",
-  avatars = DEFAULT_AVATARS,
-  extra = 4,
+  // avatars = DEFAULT_AVATARS, // [{ bg, icon }] faces in the avatar row (parked)
+  // extra = 4, // the "+N" bubble after the avatars, 0 hides it (parked)
   style,
 }) {
   // "Daily Challenge" is set on two lines, like the design.
@@ -110,6 +113,7 @@ export default function DailyChallengeCard({
         <Text style={styles.subtitle}>{keepTimeTogether(subtitle)}</Text>
       </View>
 
+      {/* Avatar row: parked until the avatar library exists (uncomment to restore).
       <View style={styles.people} accessibilityLabel={`${avatars.length + extra} people`}>
         {avatars.map((a, i) => (
           <View
@@ -125,6 +129,7 @@ export default function DailyChallengeCard({
           </View>
         ) : null}
       </View>
+      */}
     </LinearGradient>
   );
 }
@@ -161,20 +166,21 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginTop: moderateScale(10),
   },
-  people: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: moderateScale(18),
-  },
-  avatar: {
-    width: AVATAR,
-    height: AVATAR,
-    borderRadius: AVATAR / 2,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2.5,
-    borderColor: Colors.primaryLight,
-  },
-  extra: { backgroundColor: Colors.chartBg, zIndex: 0 },
-  extraText: { color: Colors.white, fontSize: fontScale(13), fontWeight: "700" },
+  // Avatar row styles: parked with the row above.
+  // people: {
+  //   flexDirection: "row",
+  //   alignItems: "center",
+  //   marginTop: moderateScale(18),
+  // },
+  // avatar: {
+  //   width: AVATAR,
+  //   height: AVATAR,
+  //   borderRadius: AVATAR / 2,
+  //   alignItems: "center",
+  //   justifyContent: "center",
+  //   borderWidth: 2.5,
+  //   borderColor: Colors.primaryLight,
+  // },
+  // extra: { backgroundColor: Colors.chartBg, zIndex: 0 },
+  // extraText: { color: Colors.white, fontSize: fontScale(13), fontWeight: "700" },
 });
