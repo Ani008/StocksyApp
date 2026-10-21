@@ -10,20 +10,49 @@ import useStreak from "../hooks/useStreak";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 /**
- * The full streak page: today's streak card, then a year of activity.
+ * The streak body: today's streak card, then a year of activity.
  * Display only. The Home screen is what records the daily check-in.
+ *
+ * Exported separately so the Daily Challenge page can show the exact same
+ * content under its "Streaks" toggle. It renders no header / ScrollView of its
+ * own, so the host screen decides the scrolling and chrome.
  */
-const StreakPage = ({ navigation }) => {
+export const StreakContent = ({ style }) => {
   const streak = useStreak({ readOnly: true });
   const refresh = streak.recheck;
 
-  // Re-read on focus so the page is right after midnight or a new check-in.
+  // Re-read on focus so it is right after midnight or a new check-in.
   useFocusEffect(
     React.useCallback(() => {
       refresh();
     }, [refresh]),
   );
 
+  if (streak.loading) return null;
+
+  return (
+    <View style={style}>
+      <StreakCard
+        streak={streak.streak}
+        longest={streak.longest}
+        week={streak.week}
+        message={streak.message}
+        celebrate={false}
+      />
+
+      <StreakCalendar
+        style={styles.calendar}
+        today={streak.today}
+        history={streak.history}
+      />
+    </View>
+  );
+};
+
+/**
+ * The full streak page (standalone, opened from Profile).
+ */
+const StreakPage = ({ navigation }) => {
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate("MainTabs");
@@ -53,23 +82,7 @@ const StreakPage = ({ navigation }) => {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {!streak.loading && (
-          <>
-            <StreakCard
-              streak={streak.streak}
-              longest={streak.longest}
-              week={streak.week}
-              message={streak.message}
-              celebrate={false}
-            />
-
-            <StreakCalendar
-              style={styles.calendar}
-              today={streak.today}
-              history={streak.history}
-            />
-          </>
-        )}
+        <StreakContent />
       </ScrollView>
     </SafeAreaView>
   );

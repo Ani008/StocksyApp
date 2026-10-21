@@ -27,7 +27,6 @@ import MiniHoldingCard from "../components/MiniHoldingCard";
 import UpdateBanner from "../components/UpdateBanner";
 import InstallPrompt from "../components/InstallPrompt";
 import StreakWelcomeOverlay from "../components/StreakWelcomeOverlay";
-import NiftyPredictionCard from "../components/NiftyPredictionCard";
 import DailyChallengeCard from "../components/DailyChallengeCard";
 import HeroCarousel from "../components/HeroCarousel";
 import useStreak from "../hooks/useStreak";
@@ -513,17 +512,19 @@ const DashboardPage = ({ navigation }) => {
               )}
             </View>
           </Card>
-          {/* Page 2: the Daily Challenge card (static for now). */}
-          <DailyChallengeCard style={styles.heroPage} />
+          {/* Page 2: the Daily Challenge card. Tapping it opens the Daily
+              Challenge page (Nifty prediction, games and streaks). */}
+          <TouchableOpacity
+            style={styles.heroPage}
+            activeOpacity={0.9}
+            onPress={() => navigation.navigate("DailyChallenge")}
+            accessibilityRole="button"
+            accessibilityLabel="Open Daily Challenge"
+          >
+            <DailyChallengeCard style={styles.heroPage} />
+          </TouchableOpacity>
         </HeroCarousel>
       </View>
-
-      {/* Daily Nifty call: slide left (down) or right (up), settles at the 3:30 PM close. */}
-      <NiftyPredictionCard
-        style={{ marginTop: moderateScale(20) }}
-        niftyLtp={niftyLtp}
-        niftyChange={niftyChange}
-      />
 
       <UpdateBanner style={{ marginTop: moderateScale(16) }} />
       {/* Web only: "Install Stocksy" card (renders nothing on native / once installed) */}
