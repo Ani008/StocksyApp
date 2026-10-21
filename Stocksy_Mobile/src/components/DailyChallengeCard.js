@@ -92,6 +92,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     justifyContent: "space-between",
     minHeight: moderateScale(240),
+    backgroundColor: Colors.card,
   },
   candles: {
     position: "absolute",
