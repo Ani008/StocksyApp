@@ -32,17 +32,19 @@ const TRACK_H = moderateScale(68);
 const PAD = moderateScale(6);
 const THUMB = TRACK_H - PAD * 2;
 
-const UP = Colors.gain; // "#00D09C"
-const DOWN = "#FF5C6C";
-const AMBER = "#FBBF24";
+// Light-theme tones: a touch deeper than the dark-card versions so text and
+// icons keep their contrast on a white surface.
+const UP = Colors.success; // "#10B981"
+const DOWN = Colors.danger; // "#EF4444"
+const AMBER = "#F59E0B";
 
 const TONE_ACCENT = {
-  live: Colors.primaryAccent,
+  live: Colors.primaryDark,
   win: UP,
   loss: DOWN,
   flat: AMBER,
-  muted: "#64748B",
-  idle: Colors.primaryAccent,
+  muted: Colors.textSecondary,
+  idle: Colors.primaryDark,
 };
 
 const springTo = (value, toValue, extra = {}) =>
@@ -214,7 +216,7 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style }) {
 
   return (
     <LinearGradient
-      colors={["#16224A", "#0D1431", "#0A0F24"]}
+      colors={[Colors.white, "#EFF6FF"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[styles.card, style]}
@@ -235,7 +237,7 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style }) {
             <Ionicons
               name="flame"
               size={moderateScale(14)}
-              color={streak.current > 0 ? "#FB923C" : "#64748B"}
+              color={streak.current > 0 ? "#F97316" : Colors.textMuted}
             />
             <Text style={styles.streakText}>{getStreakLabel(streak)}</Text>
           </View>
@@ -307,13 +309,13 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style }) {
           ]}
         >
           <Animated.View style={[styles.thumbIcon, { opacity: neutralIcon }]}>
-            <Ionicons name="swap-horizontal" size={moderateScale(24)} color="#0A0F24" />
+            <Ionicons name="swap-horizontal" size={moderateScale(24)} color={Colors.primaryDark} />
           </Animated.View>
           <Animated.View style={[styles.thumbIcon, { opacity: downIcon }]}>
             <Ionicons name="trending-down" size={moderateScale(26)} color={DOWN} />
           </Animated.View>
           <Animated.View style={[styles.thumbIcon, { opacity: upIcon }]}>
-            <Ionicons name="trending-up" size={moderateScale(26)} color="#00A87D" />
+            <Ionicons name="trending-up" size={moderateScale(26)} color={UP} />
           </Animated.View>
         </Animated.View>
       </View>
@@ -322,9 +324,9 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style }) {
       {hintText ? (
         <View style={styles.hintRow}>
           {submitting ? (
-            <ActivityIndicator size="small" color={Colors.white} />
+            <ActivityIndicator size="small" color={Colors.primary} />
           ) : (
-            <Ionicons name="time-outline" size={moderateScale(13)} color={statusTint || "rgba(148,163,184,0.9)"} />
+            <Ionicons name="time-outline" size={moderateScale(13)} color={statusTint || Colors.textMuted} />
           )}
           <Text style={[styles.hintText, statusTint && { color: statusTint }]} numberOfLines={1}>
             {hintText}
@@ -335,7 +337,7 @@ export default function NiftyPredictionCard({ niftyLtp, niftyChange, style }) {
       {/* couldn't load and nothing to show: let them retry */}
       {failed && !state ? (
         <TouchableOpacity onPress={reload} style={styles.retry} activeOpacity={0.8}>
-          <Ionicons name="refresh" size={moderateScale(14)} color={Colors.primaryAccent} />
+          <Ionicons name="refresh" size={moderateScale(14)} color={Colors.primaryDark} />
           <Text style={styles.retryText}>Try again</Text>
         </TouchableOpacity>
       ) : null}
@@ -349,8 +351,8 @@ const styles = StyleSheet.create({
     padding: moderateScale(20),
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(148,163,184,0.18)",
-    ...Shadows.floating,
+    borderColor: Colors.border,
+    ...Shadows.card,
   },
   glow: {
     position: "absolute",
@@ -389,23 +391,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: moderateScale(10),
     paddingVertical: moderateScale(5),
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: Colors.divider,
   },
   streakText: {
-    color: "rgba(255,255,255,0.85)",
+    color: Colors.textSecondary,
     fontSize: fontScale(11.5),
     fontWeight: "600",
   },
 
   title: {
-    color: Colors.white,
+    color: Colors.text,
     fontSize: fontScale(24),
     fontWeight: "800",
     letterSpacing: -0.4,
     lineHeight: fontScale(30),
   },
   subtitle: {
-    color: "rgba(226,232,240,0.7)",
+    color: Colors.textSecondary,
     fontSize: fontScale(13),
     lineHeight: fontScale(19),
     marginTop: moderateScale(6),
@@ -418,12 +420,12 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(14),
   },
   niftyLabel: {
-    color: "rgba(148,163,184,0.9)",
+    color: Colors.textMuted,
     fontSize: fontScale(10.5),
     fontWeight: "700",
     letterSpacing: 1,
   },
-  niftyPrice: { color: Colors.white, fontSize: fontScale(14), fontWeight: "700" },
+  niftyPrice: { color: Colors.text, fontSize: fontScale(14), fontWeight: "700" },
   niftyChange: { fontSize: fontScale(12), fontWeight: "700" },
 
   track: {
@@ -431,12 +433,12 @@ const styles = StyleSheet.create({
     borderRadius: TRACK_H / 2,
     marginTop: moderateScale(20),
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: Colors.divider,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: Colors.border,
     overflow: "hidden",
   },
-  trackSettled: { backgroundColor: "rgba(255,255,255,0.045)" },
+  trackSettled: { backgroundColor: Colors.surfaceAlt },
   sideLabel: {
     position: "absolute",
     flexDirection: "row",
@@ -452,7 +454,7 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(12),
   },
   hintText: {
-    color: "rgba(203,213,225,0.85)",
+    color: Colors.textSecondary,
     fontSize: fontScale(12),
     fontWeight: "600",
   },
@@ -465,13 +467,15 @@ const styles = StyleSheet.create({
     height: THUMB,
     borderRadius: THUMB / 2,
     backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
   },
   thumbWeb: { cursor: "grab", touchAction: "none", userSelect: "none" },
   thumbIcon: { position: "absolute", alignItems: "center", justifyContent: "center" },
@@ -484,5 +488,5 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(14),
     padding: moderateScale(6),
   },
-  retryText: { color: Colors.primaryAccent, fontSize: fontScale(12.5), fontWeight: "700" },
+  retryText: { color: Colors.primaryDark, fontSize: fontScale(12.5), fontWeight: "700" },
 });
