@@ -13,9 +13,12 @@ const DOT_ACTIVE = moderateScale(20);
  * (also how desktop-web users, who can't swipe, get to the next card).
  *
  * Every child is one page. Pages are as wide as the carousel and as tall as the
- * tallest page; give a child `flex: 1` to make it fill that height.
+ * tallest page; give a child `flex: 1` to make it fill that height. A gap of
+ * `gap` separates neighbouring pages, so mid-swipe you see two distinct cards
+ * with the background between them rather than one joined slab.
  *
  * Props:
+ *   gap            number — space between pages (default 14)
  *   scrollEnabled  bool   — false while something inside is being dragged (the
  *                           prediction slider), so a drag can't turn into a swipe
  *   dotColor       string — colour of the dots (active is solid, others faded)
@@ -24,6 +27,7 @@ const DOT_ACTIVE = moderateScale(20);
 export default function HeroCarousel({
   children,
   scrollEnabled = true,
+  gap = moderateScale(14),
   dotColor = "#FFFFFF",
   onPageChange,
   style,
@@ -36,35 +40,37 @@ export default function HeroCarousel({
   const [width, setWidth] = useState(Math.max(SCREEN_WIDTH - moderateScale(40), 1));
   const scrollRef = useRef(null);
   const scrollX = useRef(new Animated.Value(0)).current;
+  // Distance from one page's left edge to the next one's.
+  const pitch = width + gap;
   const [page, setPage] = useState(0);
   const pageRef = useRef(0);
 
   const settle = useCallback(
     (x) => {
-      const next = pageFromOffset(x, width, count);
+      const next = pageFromOffset(x, pitch, count);
       if (next !== pageRef.current) {
         pageRef.current = next;
         setPage(next);
         if (onPageChange) onPageChange(next);
       }
     },
-    [width, count, onPageChange],
+    [pitch, count, onPageChange],
   );
 
   // A rotation / window resize changes the page width: keep the same page in view.
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTo({ x: offsetForPage(pageRef.current, width, count), animated: false });
+      scrollRef.current.scrollTo({ x: offsetForPage(pageRef.current, pitch, count), animated: false });
     }
-  }, [width, count]);
+  }, [pitch, count]);
 
   const goTo = useCallback(
     (index) => {
       if (scrollRef.current) {
-        scrollRef.current.scrollTo({ x: offsetForPage(index, width, count), animated: true });
+        scrollRef.current.scrollTo({ x: offsetForPage(index, pitch, count), animated: true });
       }
     },
-    [width, count],
+    [pitch, count],
   );
 
   const onScroll = useMemo(
@@ -81,7 +87,13 @@ export default function HeroCarousel({
       <ScrollView
         ref={scrollRef}
         horizontal
-        pagingEnabled
+        // With a gap, a page is `pitch` wide, not the scroll view's width, so native
+        // snaps by interval. Web (react-native-web) can only snap with pagingEnabled,
+        // which puts a snap point on every page's left edge, gap included.
+        pagingEnabled={Platform.OS === "web"}
+        snapToInterval={Platform.OS === "web" ? undefined : pitch}
+        snapToAlignment="start"
+        disableIntervalMomentum
         scrollEnabled={scrollEnabled && count > 1}
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}
@@ -94,7 +106,7 @@ export default function HeroCarousel({
         style={Platform.OS === "web" ? styles.webScroll : null}
       >
         {pages.map((child, i) => (
-          <View key={child.key ?? i} style={[styles.page, { width }]}>
+          <View key={child.key ?? i} style={[styles.page, { width, marginRight: i === count - 1 ? 0 : gap }]}>
             {child}
           </View>
         ))}
@@ -103,7 +115,7 @@ export default function HeroCarousel({
       {count > 1 ? (
         <View style={styles.dots} accessibilityRole="tablist">
           {pages.map((_, i) => {
-            const input = [(i - 1) * width, i * width, (i + 1) * width];
+            const input = [(i - 1) * pitch, i * pitch, (i + 1) * pitch];
             const dotWidth = scrollX.interpolate({
               inputRange: input,
               outputRange: [DOT, DOT_ACTIVE, DOT],
