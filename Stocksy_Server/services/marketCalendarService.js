@@ -202,6 +202,8 @@ function getMarketStatus(now = new Date()) {
 }
 
 module.exports = {
+  getISTParts,
+  isTradingDay,
   isMarketOpen,
   getClosedReason,
   getNextMarketOpen,
