@@ -10,8 +10,7 @@ const http = require("http");
 require("./config/postgres");
 const { initWebSocket } = require("./services/websocketService");
 const { scheduleAlertWatcher } = require("./services/alertWatcherService");
-const { scheduleMarketOpenNotifier } = require("./services/marketOpenNotifier");
-const { scheduleDailySummaries } = require("./services/dailySummaryService");
+const { scheduleNiftySettler } = require("./services/niftyPredictionService");
 const { generalLimiter } = require("./middleware/rateLimiter");
 const { securityHeaders } = require("./middleware/securityHeaders");
 
@@ -97,6 +96,7 @@ app.use("/api/journal", require("./routes/journal"));
 app.use("/api/alerts", require("./routes/alerts"));
 app.use("/api/watchlists", require("./routes/watchlists"));
 app.use("/api/push", require("./routes/push"));
+app.use("/api/predictions", require("./routes/predictions"));
 app.use("/api/app", require("./routes/appVersion"));   // <-- add this
 
 // ─── Health check — hit this first from the app to confirm connectivity ───────
@@ -105,8 +105,7 @@ app.use("/api/app", require("./routes/appVersion"));   // <-- add this
 // ─── Services ─────────────────────────────────────────────────────────────────
 initWebSocket(server);
 scheduleAlertWatcher(); // starts the every-minute GTT/price-alert cron job
-scheduleMarketOpenNotifier(); // daily "Nifty opened +x%, your portfolio is +₹y" push
-scheduleDailySummaries(); // 9:20am "Nifty opened…" + 3:35pm "Nifty closed…" portfolio push
+scheduleNiftySettler(); // settles the daily Nifty calls just after the 3:30 PM close
 
 // ─── 404 — unmatched routes ────────────────────────────────────────────────────
 // Without this, an unmatched route falls through to Express's default HTML

@@ -27,6 +27,8 @@ import MiniHoldingCard from "../components/MiniHoldingCard";
 import UpdateBanner from "../components/UpdateBanner";
 import InstallPrompt from "../components/InstallPrompt";
 import StreakWelcomeOverlay from "../components/StreakWelcomeOverlay";
+import DailyChallengeCard from "../components/DailyChallengeCard";
+import HeroCarousel from "../components/HeroCarousel";
 import useStreak from "../hooks/useStreak";
 import { usePortfolio } from "../hooks/usePortfolio";
 // import Search from "./SearchPage";
@@ -382,133 +384,146 @@ const DashboardPage = ({ navigation }) => {
         </View> */}
 
         {/* ── Main Asset Card ─────────────────────────────────────────────── */}
-        <Card style={styles.mainCard}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate("Portfolio")}
-          >
-            <AppText variant="caption" color={Colors.textSecondary}>
-              {assetTab === "delivery"
-                ? "Delivery Value"
-                : "Intraday P&L (Today)"}
-            </AppText>
-            <View style={styles.priceRow}>
-              {assetTab === "delivery" ? (
-                <AppText variant="h1">
-                  ₹
-                  {activeTotals?.portfolioValue?.toLocaleString("en-IN") ?? "0"}
-                </AppText>
-              ) : (
-                <AppText
-                  variant="h1"
-                  color={
-                    (activeTotals?.totalUnrealised ?? 0) >= 0
-                      ? Colors.success
-                      : Colors.danger
-                  }
-                >
-                  {(activeTotals?.totalUnrealised ?? 0) >= 0 ? "+" : "-"}₹
-                  {Math.abs(activeTotals?.totalUnrealised ?? 0).toLocaleString(
-                    "en-IN",
-                    { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-                  )}
-                </AppText>
-              )}
+        <HeroCarousel>
+          <Card style={styles.mainCard}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate("Portfolio")}
+            >
+              <AppText variant="caption" color={Colors.textSecondary}>
+                {assetTab === "delivery"
+                  ? "Delivery Value"
+                  : "Intraday P&L (Today)"}
+              </AppText>
+              <View style={styles.priceRow}>
+                {assetTab === "delivery" ? (
+                  <AppText variant="h1">
+                    ₹
+                    {activeTotals?.portfolioValue?.toLocaleString("en-IN") ?? "0"}
+                  </AppText>
+                ) : (
+                  <AppText
+                    variant="h1"
+                    color={
+                      (activeTotals?.totalUnrealised ?? 0) >= 0
+                        ? Colors.success
+                        : Colors.danger
+                    }
+                  >
+                    {(activeTotals?.totalUnrealised ?? 0) >= 0 ? "+" : "-"}₹
+                    {Math.abs(activeTotals?.totalUnrealised ?? 0).toLocaleString(
+                      "en-IN",
+                      { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                    )}
+                  </AppText>
+                )}
 
-              <View
-                style={[
-                  styles.changeChip,
-                  {
-                    backgroundColor:
+                <View
+                  style={[
+                    styles.changeChip,
+                    {
+                      backgroundColor:
+                        (assetTab === "delivery"
+                          ? activeTotals?.todayPct
+                          : activeTotals?.unrealisedPct) >= 0
+                          ? Colors.successBg
+                          : Colors.dangerBg,
+                    },
+                  ]}
+                >
+                  <AppText
+                    variant="caption"
+                    color={
                       (assetTab === "delivery"
                         ? activeTotals?.todayPct
                         : activeTotals?.unrealisedPct) >= 0
-                        ? Colors.successBg
-                        : Colors.dangerBg,
-                  },
-                ]}
-              >
-                <AppText
-                  variant="caption"
-                  color={
-                    (assetTab === "delivery"
+                        ? Colors.success
+                        : Colors.danger
+                    }
+                    style={{ fontWeight: "700" }}
+                  >
+                    {(assetTab === "delivery"
                       ? activeTotals?.todayPct
                       : activeTotals?.unrealisedPct) >= 0
-                      ? Colors.success
-                      : Colors.danger
-                  }
-                  style={{ fontWeight: "700" }}
-                >
-                  {(assetTab === "delivery"
-                    ? activeTotals?.todayPct
-                    : activeTotals?.unrealisedPct) >= 0
-                    ? "▲"
-                    : "▼"}{" "}
-                  {Math.abs(
-                    (assetTab === "delivery"
-                      ? activeTotals?.todayPct
-                      : activeTotals?.unrealisedPct) ?? 0,
-                  ).toFixed(2)}
-                  %
-                </AppText>
+                      ? "▲"
+                      : "▼"}{" "}
+                    {Math.abs(
+                      (assetTab === "delivery"
+                        ? activeTotals?.todayPct
+                        : activeTotals?.unrealisedPct) ?? 0,
+                    ).toFixed(2)}
+                    %
+                  </AppText>
+                </View>
               </View>
+            </TouchableOpacity>
+
+            {/* Delivery / Intraday toggle — keeps the two totals from being
+                blended into one confusing number (e.g. exiting all intraday
+                positions used to make the whole card total drop with no
+                explanation of where the money "went"). */}
+            <View style={styles.assetToggleRow}>
+              <SegmentedToggle
+                theme="neutral"
+                value={assetTab}
+                onChange={setAssetTab}
+                options={[
+                  { key: "delivery", label: "Delivery" },
+                  {
+                    key: "intraday",
+                    label: `Intraday${intradayPositions.length ? ` (${intradayPositions.length})` : ""}`,
+                  },
+                ]}
+              />
             </View>
+
+            <View style={styles.miniCardsRow}>
+              {activePositions?.length > 0 ? (
+                activePositions.slice(0, 2).map((position) => (
+                  <MiniHoldingCard
+                    key={`${position.wallet_id}:${position.instrument_key}:${position.product_type}`}
+                    ticker={position.symbol}
+                    name={`₹${position.ltp?.toLocaleString("en-IN")}`}
+                    change={`${position.unrealisedPct?.toFixed(2)}%`}
+                    isPositive={position.unrealisedPnl >= 0}
+                    logoUrl={`https://img.logo.dev/${
+                      COMPANY_DOMAINS[position.symbol]
+                    }?token=pk_Bym4BAakTJudMK4MGnfpnw`}
+                    onPress={() =>
+                      navigation.navigate("StockDetail", {
+                        instrumentKey: position.instrument_key,
+                        symbol: position.symbol,
+                        name: position.name,
+                        sector: position.sector,
+                      })
+                    }
+                  />
+                ))
+              ) : (
+                <AppText
+                  variant="caption"
+                  color={Colors.textSecondary}
+                  style={styles.noHoldingsText}
+                >
+                  {assetTab === "delivery"
+                    ? "No Delivery Holdings Yet"
+                    : "No Intraday Positions Today"}
+                </AppText>
+              )}
+            </View>
+          </Card>
+          {/* Page 2: the Daily Challenge card. Tapping it opens the Daily
+              Challenge page (Nifty prediction, games and streaks). */}
+          <TouchableOpacity
+            style={styles.heroPage}
+            activeOpacity={0.9}
+            onPress={() => navigation.navigate("DailyChallenge")}
+            accessibilityRole="button"
+            accessibilityLabel="Open Daily Challenge"
+          >
+            <DailyChallengeCard style={styles.heroPage} />
           </TouchableOpacity>
-
-          {/* Delivery / Intraday toggle — keeps the two totals from being
-              blended into one confusing number (e.g. exiting all intraday
-              positions used to make the whole card total drop with no
-              explanation of where the money "went"). */}
-          <View style={styles.assetToggleRow}>
-            <SegmentedToggle
-              theme="neutral"
-              value={assetTab}
-              onChange={setAssetTab}
-              options={[
-                { key: "delivery", label: "Delivery" },
-                {
-                  key: "intraday",
-                  label: `Intraday${intradayPositions.length ? ` (${intradayPositions.length})` : ""}`,
-                },
-              ]}
-            />
-          </View>
-
-          <View style={styles.miniCardsRow}>
-            {activePositions?.length > 0 ? (
-              activePositions.slice(0, 2).map((position) => (
-                <MiniHoldingCard
-                  key={`${position.wallet_id}:${position.instrument_key}:${position.product_type}`}
-                  ticker={position.symbol}
-                  name={`₹${position.ltp?.toLocaleString("en-IN")}`}
-                  change={`${position.unrealisedPct?.toFixed(2)}%`}
-                  isPositive={position.unrealisedPnl >= 0}
-                  logoUrl={`https://img.logo.dev/${
-                    COMPANY_DOMAINS[position.symbol]
-                  }?token=pk_Bym4BAakTJudMK4MGnfpnw`}
-                  onPress={() =>
-                    navigation.navigate("StockDetail", {
-                      instrumentKey: position.instrument_key,
-                      symbol: position.symbol,
-                      name: position.name,
-                      sector: position.sector,
-                    })
-                  }
-                />
-              ))
-            ) : (
-              <AppText
-                variant="caption"
-                color={Colors.textSecondary}
-                style={styles.noHoldingsText}
-              >
-                {assetTab === "delivery"
-                  ? "No Delivery Holdings Yet"
-                  : "No Intraday Positions Today"}
-              </AppText>
-            )}
-          </View>
-        </Card>
+        </HeroCarousel>
       </View>
 
       <UpdateBanner style={{ marginTop: moderateScale(16) }} />
@@ -590,7 +605,7 @@ const styles = StyleSheet.create({
     marginTop: -moderateScale(20),
     paddingHorizontal: moderateScale(20),
     paddingTop: moderateScale(20),
-    paddingBottom: moderateScale(20),
+    paddingBottom: moderateScale(22),
     backgroundColor: Colors.primaryDark,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
@@ -650,8 +665,9 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
-    marginBottom: moderateScale(28),
+    flex: 1, // fills the carousel page, so both cards are the same height
   },
+  heroPage: { flex: 1 },
   priceRow: {
     flexDirection: "row",
     alignItems: "center",

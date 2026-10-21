@@ -208,7 +208,11 @@ module.exports = {
   getClosedReason,
   getNextMarketOpen,
   getMarketStatus,
+  // Also used by the daily Nifty prediction (it needs the IST date/time and
+  // trading-day check on their own, without the ENFORCE_MARKET_HOURS dev switch).
   getISTParts,
+  isTradingDay,
+  addDaysToIsoDate,
   MARKET_OPEN_HHMM,
   MARKET_CLOSE_HHMM,
 };
