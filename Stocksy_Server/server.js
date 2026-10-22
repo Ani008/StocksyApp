@@ -97,6 +97,7 @@ app.use("/api/alerts", require("./routes/alerts"));
 app.use("/api/watchlists", require("./routes/watchlists"));
 app.use("/api/push", require("./routes/push"));
 app.use("/api/predictions", require("./routes/predictions"));
+app.use("/api/streak", require("./routes/streak"));
 app.use("/api/app", require("./routes/appVersion"));   // <-- add this
 
 // ─── Health check — hit this first from the app to confirm connectivity ───────

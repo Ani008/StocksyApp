@@ -90,6 +90,12 @@ ADMIN_USER_IDS=          # comma-separated user ids allowed to see /api/revenue/
 > Your reverse proxy must pass WebSocket `Upgrade` requests and the `Origin` header through,
 > and set `X-Forwarded-For`.
 
+> **Daily streak (saved on the server)** — run `migrations/019_user_streak_checkins.sql` once
+> **before** deploying the server that serves `/api/streak`. Until the table exists the app
+> can't record new streak days (it keeps showing the last streak it has, and syncs once the
+> table is there). The streak survives reinstalls, new devices and new web addresses because
+> it is stored per account; days are IST calendar days taken from the server's clock.
+
 > **`INTERNAL_API_KEY`** — the fundamentals scheduler (`backend_py/fundamentals.py`) sends
 > this in an `X-Internal-Key` header. If it is missing or shorter than 24 characters the
 > server rejects every `POST /api/fundamentals` (fails closed). Generate one with:

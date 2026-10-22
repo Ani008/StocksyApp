@@ -60,6 +60,11 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
+    // Background calls (e.g. the daily streak check-in) pass { silent: true }:
+    // a failure there must not pop an error toast every time the app opens.
+    // Session handling below is unaffected.
+    const quiet = !!error.config?.silent;
+
     if (error.response) {
       debugLog(`[API ❌] ${error.response.status} ${error.config?.url}`);
 
@@ -94,7 +99,7 @@ api.interceptors.response.use(
           // refused: fall through to the re-login screen below
         } catch (refreshError) {
           // Could not reach the server to refresh: keep the session.
-          showToast('No connection to the server. Check your network.', 'error');
+          if (!quiet) showToast('No connection to the server. Check your network.', 'error');
           return Promise.reject(error);
         }
       }
@@ -110,7 +115,7 @@ api.interceptors.response.use(
         // BuyOrderScreen) uses to render a proper message box with
         // the exact next-open date/time — a one-line toast would
         // throw that detail away.
-      } else {
+      } else if (!quiet) {
         showToast(
           message || 'Something went wrong. Please try again.',
           severity || 'error'
@@ -119,10 +124,10 @@ api.interceptors.response.use(
     } else if (error.request) {
       debugLog('[API 🔴] No response received — check IP/server');
       debugLog('[API 🔴] URL attempted:', error.config?.baseURL + error.config?.url);
-      showToast('No connection to the server. Check your network.', 'error');
+      if (!quiet) showToast('No connection to the server. Check your network.', 'error');
     } else {
       debugLog('[API 🔴] Axios config error:', error.message);
-      showToast('Something went wrong. Please try again.', 'error');
+      if (!quiet) showToast('Something went wrong. Please try again.', 'error');
     }
     return Promise.reject(error);
   }

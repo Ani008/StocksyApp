@@ -31,6 +31,24 @@ export function toDateKey(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+const IST_OFFSET_MS = 330 * 60 * 1000; // UTC+05:30, no daylight saving
+
+/**
+ * The IST calendar day of `date` as "YYYY-MM-DD", whatever the device's own
+ * timezone is. The server counts streak days in IST (the exchange's day), so
+ * the app must name days the same way or the week strip and calendar would
+ * disagree with the saved history for anyone outside India.
+ */
+export function toIstDateKey(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())}`;
+}
+
+/** The milestone `current` hits (3, 7, 14...), or 0 if it is not one. */
+export function milestoneFor(current) {
+  return MILESTONES.includes(current) ? current : 0;
+}
+
 function keyToUtcMs(key) {
   const [y, m, d] = key.split("-").map(Number);
   return Date.UTC(y, m - 1, d);

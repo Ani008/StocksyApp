@@ -16,6 +16,8 @@ import {
   sanitizeState,
   shiftKey,
   toDateKey,
+  toIstDateKey,
+  milestoneFor,
 } from "../src/utils/streak.js";
 
 // ── date helpers ────────────────────────────────────────────────────────────
@@ -285,4 +287,40 @@ test("formatDateKey", () => {
 
 test("history is kept long enough to fill a full-year calendar", () => {
   assert.ok(HISTORY_LIMIT >= YEAR_WEEKS * 7);
+});
+
+// ── server-backed streak: IST days + milestones ─────────────────────────────
+test("toIstDateKey names the day in IST whatever the device timezone is", () => {
+  // 18:45 UTC on the 21st is 00:15 IST on the 22nd.
+  assert.equal(toIstDateKey(new Date("2026-10-21T18:45:00Z")), "2026-10-22");
+  // 18:29 UTC is 23:59 IST: still the 21st.
+  assert.equal(toIstDateKey(new Date("2026-10-21T18:29:00Z")), "2026-10-21");
+  // Year and month rollover.
+  assert.equal(toIstDateKey(new Date("2026-12-31T18:30:00Z")), "2027-01-01");
+  assert.equal(toIstDateKey(new Date("2026-01-31T20:00:00Z")), "2026-02-01");
+});
+
+test("milestoneFor returns the milestone or 0", () => {
+  assert.equal(milestoneFor(3), 3);
+  assert.equal(milestoneFor(7), 7);
+  assert.equal(milestoneFor(365), 365);
+  assert.equal(milestoneFor(4), 0);
+  assert.equal(milestoneFor(0), 0);
+});
+
+test("a server response becomes a usable state (current survives, bad data does not crash)", () => {
+  const ok = sanitizeState({
+    current: 3,
+    longest: 5,
+    lastCheckIn: "2026-10-22",
+    history: ["2026-10-20", "2026-10-21", "2026-10-22"],
+  });
+  assert.equal(ok.current, 3);
+  assert.equal(ok.longest, 5);
+  assert.equal(effectiveStreak(ok, "2026-10-22"), 3);
+  assert.equal(effectiveStreak(ok, "2026-10-23"), 3); // still alive the morning after
+  assert.equal(effectiveStreak(ok, "2026-10-24"), 0); // ended
+
+  // A server that returned nothing useful must not crash the dashboard.
+  assert.deepEqual(sanitizeState(undefined), { current: 0, longest: 0, lastCheckIn: null, history: [] });
 });

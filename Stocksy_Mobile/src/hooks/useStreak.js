@@ -2,126 +2,195 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { checkInStreak, getStreak } from "../../services/streakService";
 import {
   EMPTY_STREAK,
-  applyCheckIn,
   effectiveStreak,
   getStreakMessage,
   getWeek,
+  milestoneFor,
   sanitizeState,
-  toDateKey,
+  toIstDateKey,
 } from "../utils/streak";
 
-const KEY_PREFIX = "stocksy.streak.v1.";
+// The device keeps a COPY of the streak, per account: it makes the screens show
+// instantly and keeps something on screen when the phone is offline. The truth
+// is on the server. Before the server kept streaks, this key WAS the streak, so
+// whatever is in it on first sync is offered to the server once (see below).
+const CACHE_PREFIX = "stocksy.streak.v1.";
+// Set once the server has this account's streak, so the old on-device history
+// is offered only once and never again.
+const SYNCED_PREFIX = "stocksy.streak.synced.v1.";
 
 // Streaks are kept per account so two people sharing a device don't share one.
-// Logging out clears "user" but not this key, so a streak survives a re-login.
-async function resolveStorageKey() {
+// Logging out clears "user" but not these keys, so a re-login shows it at once.
+async function resolveKeys() {
+  let id = "guest";
   try {
     const raw = await AsyncStorage.getItem("user");
     const user = raw ? JSON.parse(raw) : null;
-    const id = user?.id ?? user?.email ?? user?.username;
-    return `${KEY_PREFIX}${id ?? "guest"}`;
+    id = user?.id ?? user?.email ?? user?.username ?? "guest";
   } catch {
-    return `${KEY_PREFIX}guest`;
+    // fall back to the guest keys
+  }
+  return { cacheKey: `${CACHE_PREFIX}${id}`, syncedKey: `${SYNCED_PREFIX}${id}` };
+}
+
+async function readCache(cacheKey) {
+  try {
+    const raw = await AsyncStorage.getItem(cacheKey);
+    return sanitizeState(raw ? JSON.parse(raw) : null);
+  } catch {
+    return sanitizeState(null);
   }
 }
+
+async function readSynced(syncedKey) {
+  try {
+    return (await AsyncStorage.getItem(syncedKey)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// What the server sends back, as the app's streak state.
+const fromServer = (res) =>
+  sanitizeState({
+    current: res?.current,
+    longest: res?.longest,
+    lastCheckIn: res?.lastCheckIn,
+    history: res?.history,
+  });
 
 /**
  * Daily streak for the signed-in user.
  *
- * Opening the app counts as the day's check-in. The check-in runs on mount,
- * whenever the app returns to the foreground on a new day, and when the
- * caller invokes `recheck` (the dashboard does so on screen focus, because tab
- * screens stay mounted across midnight).
+ * Opening the app counts as the day's check-in, and the SERVER keeps the
+ * streak: it survives a reinstall, a new device, a new web address or cleared
+ * browser data, and a wrong phone clock can't change it. The check-in runs on
+ * mount, whenever the app returns to the foreground, and when the caller
+ * invokes `recheck` (the dashboard does so on screen focus, because tab
+ * screens stay mounted across midnight). Once today is counted on this device
+ * it costs nothing to call again.
  *
- * `readOnly` is for screens that only display the streak (Profile): it reads
- * what is saved and never records a check-in. Only the Home screen records
- * one, so the "Day N" welcome there can't be used up by another screen.
+ * Days are IST calendar days (the exchange's day, and what the server counts),
+ * whatever timezone the phone is in.
  *
- * Today this lives on the device only. It is lost on reinstall and follows the
- * phone's clock; moving it to the server is the follow-up.
+ * If the server can't be reached the last streak this device saw stays on
+ * screen and the next recheck tries again. A day is counted when the app next
+ * reaches the server, so a day spent entirely offline is not counted.
+ *
+ * `readOnly` is for screens that only display the streak (Profile): it never
+ * records a check-in. Only the Home screen records one, so the "Day N" welcome
+ * there can't be used up by another screen.
  */
 export default function useStreak({ readOnly = false } = {}) {
   const [state, setState] = useState(EMPTY_STREAK);
-  const [today, setToday] = useState(() => toDateKey());
+  const [today, setToday] = useState(() => toIstDateKey());
   const [loading, setLoading] = useState(true);
   // Set only when *this* session recorded a new day, so the UI can celebrate
   // once and not on every re-render or revisit.
   const [event, setEvent] = useState({ dayKey: null, lostStreak: 0, milestone: 0 });
 
-  const storageKey = useRef(null);
+  const keys = useRef(null);
   const stateRef = useRef(EMPTY_STREAK);
   const busy = useRef(false);
+
+  const show = useCallback((next) => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
+
+  // Keep a copy on the device. A failure here only costs the instant display.
+  const saveCache = useCallback(async (next, markSynced) => {
+    try {
+      await AsyncStorage.setItem(keys.current.cacheKey, JSON.stringify(next));
+      if (markSynced) await AsyncStorage.setItem(keys.current.syncedKey, "1");
+    } catch (err) {
+      console.warn("Could not save streak", err);
+    }
+  }, []);
 
   const recheck = useCallback(async () => {
     if (busy.current) return; // a check-in is already running
     busy.current = true;
     try {
-      if (!storageKey.current) storageKey.current = await resolveStorageKey();
+      if (!keys.current) keys.current = await resolveKeys();
+      const { cacheKey, syncedKey } = keys.current;
+      const todayKey = toIstDateKey();
+
+      // What this device already knows: shows straight away, and is what stays
+      // on screen if the server can't be reached.
+      const cached = readOnly || stateRef.current === EMPTY_STREAK
+        ? await readCache(cacheKey)
+        : stateRef.current;
+      show(cached);
+      setToday(todayKey);
+      setLoading(false);
+
+      const synced = await readSynced(syncedKey);
 
       if (readOnly) {
-        // Always re-read: another screen may have recorded a day since.
-        let latest;
-        try {
-          const raw = await AsyncStorage.getItem(storageKey.current);
-          latest = sanitizeState(raw ? JSON.parse(raw) : null);
-        } catch {
-          latest = sanitizeState(null);
+        // Display only. Normally the copy is current, because Home records the
+        // day. A fresh install that opens this screen first has nothing yet, so
+        // ask the server (this reads only; it records no day).
+        if (!synced && cached.lastCheckIn === null) {
+          try {
+            const fresh = fromServer(await getStreak());
+            show(fresh);
+            await saveCache(fresh, false);
+          } catch {
+            // offline: show the empty state; Home will sync soon
+          }
         }
-        stateRef.current = latest;
-        setState(latest);
-        setToday(toDateKey());
         return;
       }
 
-      let saved = stateRef.current;
-      if (saved === EMPTY_STREAK) {
-        try {
-          const raw = await AsyncStorage.getItem(storageKey.current);
-          saved = sanitizeState(raw ? JSON.parse(raw) : null);
-        } catch {
-          saved = sanitizeState(null);
-        }
+      // Already counted today on this device and the server has it: nothing to ask.
+      if (synced && cached.lastCheckIn === todayKey) return;
+
+      let res;
+      try {
+        // First sync only: also offer the streak this device had saved before
+        // the server kept it, so an existing streak isn't lost.
+        res = await checkInStreak(synced ? undefined : cached.history);
+      } catch {
+        // Offline or a server hiccup: keep what is on screen. The next recheck
+        // (focus, foreground) tries again.
+        return;
       }
 
-      const todayKey = toDateKey();
-      const result = applyCheckIn(saved, todayKey);
+      const next = fromServer(res);
+      show(next);
+      setToday(res?.today || todayKey);
 
-      stateRef.current = result.state;
-      setState(result.state);
-      setToday(todayKey);
-
-      if (result.isNewDay) {
+      if (res?.isNewDay) {
         setEvent({
-          dayKey: todayKey,
-          lostStreak: result.lostStreak,
-          milestone: result.milestone,
+          dayKey: res.today || todayKey,
+          lostStreak: res.lostStreak || 0,
+          milestone: milestoneFor(next.current),
         });
-        try {
-          await AsyncStorage.setItem(storageKey.current, JSON.stringify(result.state));
-        } catch (err) {
-          // The streak still shows for this session; it just won't survive a restart.
-          console.warn("Could not save streak", err);
-        }
       }
+      await saveCache(next, true);
     } finally {
       busy.current = false;
       setLoading(false);
     }
-  }, [readOnly]);
+  }, [readOnly, show, saveCache]);
 
   useEffect(() => {
     recheck();
   }, [recheck]);
 
-  // Coming back to the app (or its browser tab) after midnight is a new day.
+  // Coming back to the app (or its browser tab) is a chance to count a new day
+  // or to retry a check-in that failed. When today is already counted, this
+  // costs nothing.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
-      if (next === "active" && toDateKey() !== today) recheck();
+      if (next === "active") recheck();
     });
     return () => sub.remove();
-  }, [recheck, today]);
+  }, [recheck]);
 
   const current = effectiveStreak(state, today);
   const week = useMemo(() => getWeek(today, state.history), [today, state.history]);
