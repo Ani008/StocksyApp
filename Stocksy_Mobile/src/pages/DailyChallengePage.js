@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import SegmentedToggle from "../components/SegmentedToggle";
 import NiftyPredictionCard from "../components/NiftyPredictionCard";
 import DailyQuizCard from "../components/DailyQuizCard";
+import StockOfTheDayCard from "../components/StockOfTheDayCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
@@ -86,6 +87,17 @@ const DailyChallengePage = ({ navigation }) => {
             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
             <View style={styles.widgetRow}>
               <DailyQuizCard />
+              <StockOfTheDayCard
+                onPress={() =>
+                  navigation.navigate("StockDetail", {
+                    instrumentKey: "NSE_EQ|INE155A01022",
+                    symbol: "TATAMOTORS",
+                    name: "Tata Motors Ltd",
+                    sector: "Automobile",
+                    domain: "tatamotors.com",
+                  })
+                }
+              />
             </View>
           </>
         ) : (
