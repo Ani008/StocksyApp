@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import SegmentedToggle from "../components/SegmentedToggle";
 import NiftyPredictionCard from "../components/NiftyPredictionCard";
+import DailyQuizCard from "../components/DailyQuizCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
@@ -81,7 +82,12 @@ const DailyChallengePage = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
       >
         {tab === "challenge" ? (
-          <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
+          <>
+            <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
+            <View style={styles.widgetRow}>
+              <DailyQuizCard />
+            </View>
+          </>
         ) : (
           <StreakContent />
         )}
@@ -119,6 +125,13 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: moderateScale(20),
     paddingBottom: moderateScale(40),
+  },
+  // Square widgets sit in a row under the Nifty card (two-up grid; more games can join later).
+  widgetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginTop: moderateScale(16),
   },
 });
 
