@@ -7,6 +7,7 @@ import SegmentedToggle from "../components/SegmentedToggle";
 import NiftyPredictionCard from "../components/NiftyPredictionCard";
 import DailyQuizCard from "../components/DailyQuizCard";
 import StockOfTheDayCard from "../components/StockOfTheDayCard";
+import ChallengeFriendCard from "../components/ChallengeFriendCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
@@ -99,6 +100,7 @@ const DailyChallengePage = ({ navigation }) => {
                 }
               />
             </View>
+            <ChallengeFriendCard style={styles.challengeCard} />
           </>
         ) : (
           <StreakContent />
@@ -145,6 +147,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: moderateScale(16),
   },
+  challengeCard: { marginTop: moderateScale(16) },
 });
 
 export default DailyChallengePage;
