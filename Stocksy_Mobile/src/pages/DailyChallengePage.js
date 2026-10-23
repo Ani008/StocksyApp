@@ -88,17 +88,7 @@ const DailyChallengePage = ({ navigation }) => {
             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
             <View style={styles.widgetRow}>
               <DailyQuizCard />
-              <StockOfTheDayCard
-                onPress={() =>
-                  navigation.navigate("StockDetail", {
-                    instrumentKey: "NSE_EQ|INE155A01022",
-                    symbol: "TATAMOTORS",
-                    name: "Tata Motors Ltd",
-                    sector: "Automobile",
-                    domain: "tatamotors.com",
-                  })
-                }
-              />
+              <StockOfTheDayCard onPress={() => navigation.navigate("StockOfTheDay")} />
             </View>
             <ChallengeFriendCard style={styles.challengeCard} />
           </>

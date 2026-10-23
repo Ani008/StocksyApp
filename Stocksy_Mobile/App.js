@@ -70,6 +70,7 @@ import AlertsPage from "./src/pages/AlertsPage";
 import WatchlistPage from "./src/pages/WatchlistPage";
 import StreakPage from "./src/pages/StreakPage";
 import DailyChallengePage from "./src/pages/DailyChallengePage";
+import StockOfTheDayPage from "./src/pages/StockOfTheDayPage";
 
 // ─── Tab screens ──────────────────────────────────────────────────────────────
 import DashboardPage from "./src/pages/DashboardPage";
@@ -330,6 +331,7 @@ function AppContent() {
               name="DailyChallenge"
               component={DailyChallengePage}
             />
+            <Stack.Screen name="StockOfTheDay" component={StockOfTheDayPage} />
 
             <Stack.Screen name="Search" component={SearchPage} />
             <Stack.Screen name="StockDetail" component={StockDetailPage} />
