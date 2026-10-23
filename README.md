@@ -95,6 +95,10 @@ ADMIN_USER_IDS=          # comma-separated user ids allowed to see /api/revenue/
 > can't record new streak days (it keeps showing the last streak it has, and syncs once the
 > table is there). The streak survives reinstalls, new devices and new web addresses because
 > it is stored per account; days are IST calendar days taken from the server's clock.
+> A day counts only when the user places an order (delivery or intraday) or makes their Nifty
+> call. Opening the app does not count. Streaks run on trading days, so weekends and market
+> holidays neither add to nor break one (this uses `config/marketHolidays.js`, so keep that
+> list updated each December). No new migration beyond 019.
 
 > **`INTERNAL_API_KEY`** — the fundamentals scheduler (`backend_py/fundamentals.py`) sends
 > this in an `X-Internal-Key` header. If it is missing or shorter than 24 characters the

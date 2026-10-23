@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   EMPTY_STREAK,
   HISTORY_LIMIT,
-  applyCheckIn,
   dayDiff,
   effectiveStreak,
   getDoneRuns,
@@ -35,84 +34,91 @@ test("shiftKey and dayDiff cross month, year and leap-day boundaries", () => {
   assert.equal(dayDiff("2025-12-31", "2026-01-01"), 1);
 });
 
-// ── applyCheckIn ────────────────────────────────────────────────────────────
-test("first ever check-in starts a streak of 1", () => {
-  const r = applyCheckIn(EMPTY_STREAK, "2026-10-19");
-  assert.equal(r.isNewDay, true);
-  assert.equal(r.state.current, 1);
-  assert.equal(r.state.longest, 1);
-  assert.equal(r.state.lastCheckIn, "2026-10-19");
-  assert.deepEqual(r.state.history, ["2026-10-19"]);
-  assert.equal(r.lostStreak, 0);
+// ── the server decides the streak; the app only shapes it for display ──────
+test("sanitizeState keeps what the server sends: alive-through date, off days, lost streak", () => {
+  const s = sanitizeState({
+    current: 2,
+    longest: 4,
+    lastCheckIn: "2026-10-23",
+    aliveThrough: "2026-10-26",
+    history: ["2026-10-22", "2026-10-23"],
+    offDays: ["2026-10-25", "2026-10-24", "bad", "2026-10-24"],
+    lostStreak: 3,
+  });
+  assert.equal(s.aliveThrough, "2026-10-26");
+  assert.deepEqual(s.offDays, ["2026-10-24", "2026-10-25"]);
+  assert.equal(s.lostStreak, 3);
 });
 
-test("checking in on consecutive days extends the streak", () => {
-  let s = applyCheckIn(EMPTY_STREAK, "2026-10-19").state;
-  s = applyCheckIn(s, "2026-10-20").state;
-  const r = applyCheckIn(s, "2026-10-21");
-  assert.equal(r.state.current, 3);
-  assert.equal(r.milestone, 3);
-  assert.equal(r.isNewDay, true);
+test("sanitizeState drops an alive-through date that has no last day, and bad numbers", () => {
+  assert.equal(sanitizeState({ aliveThrough: "2026-10-26" }).aliveThrough, null);
+  assert.equal(sanitizeState({ lastCheckIn: "2026-10-23", aliveThrough: "nope" }).aliveThrough, null);
+  assert.equal(sanitizeState({ lostStreak: -4 }).lostStreak, 0);
+  assert.equal(sanitizeState({ lostStreak: "7" }).lostStreak, 0);
 });
 
-test("a second check-in on the same day changes nothing", () => {
-  const s = applyCheckIn(EMPTY_STREAK, "2026-10-19").state;
-  const r = applyCheckIn(s, "2026-10-19");
-  assert.equal(r.isNewDay, false);
-  assert.equal(r.milestone, 0);
-  assert.deepEqual(r.state, s);
+test("effectiveStreak follows the server's alive-through date, so Friday's streak lives over the weekend", () => {
+  const s = sanitizeState({
+    current: 4,
+    lastCheckIn: "2026-10-23", // Friday
+    aliveThrough: "2026-10-26", // Monday: the next trading day
+    history: ["2026-10-23"],
+  });
+  assert.equal(effectiveStreak(s, "2026-10-23"), 4); // Friday
+  assert.equal(effectiveStreak(s, "2026-10-24"), 4); // Saturday
+  assert.equal(effectiveStreak(s, "2026-10-25"), 4); // Sunday
+  assert.equal(effectiveStreak(s, "2026-10-26"), 4); // Monday, nothing done yet
+  assert.equal(effectiveStreak(s, "2026-10-27"), 0); // Monday passed with nothing
 });
 
-test("skipping a day resets to 1, reports the lost streak and keeps longest", () => {
-  let s = EMPTY_STREAK;
-  for (const d of ["2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18"]) {
-    s = applyCheckIn(s, d).state;
-  }
-  assert.equal(s.current, 4);
-  const r = applyCheckIn(s, "2026-10-20"); // 19th skipped
-  assert.equal(r.state.current, 1);
-  assert.equal(r.state.longest, 4);
-  assert.equal(r.lostStreak, 4);
-  assert.equal(r.isNewDay, true);
+test("effectiveStreak on an old saved copy (no alive-through date) falls back to yesterday-or-today", () => {
+  const s = sanitizeState({ current: 3, lastCheckIn: "2026-10-22", history: ["2026-10-22"] });
+  assert.equal(effectiveStreak(s, "2026-10-23"), 3);
+  assert.equal(effectiveStreak(s, "2026-10-24"), 0);
 });
 
-test("a device clock that moves backwards does not break the streak", () => {
-  let s = applyCheckIn(EMPTY_STREAK, "2026-10-19").state;
-  s = applyCheckIn(s, "2026-10-20").state;
-  const r = applyCheckIn(s, "2026-10-18");
-  assert.equal(r.isNewDay, false);
-  assert.equal(r.state.current, 2);
-  assert.equal(r.state.lastCheckIn, "2026-10-20");
+test("getWeek marks weekends and holidays as off, not missed", () => {
+  // Week of Mon 19 Oct 2026: Tue 20 is Dussehra, Sat 24 / Sun 25 are the weekend.
+  const off = ["2026-10-20", "2026-10-24", "2026-10-25"];
+  const week = getWeek("2026-10-23", ["2026-10-19", "2026-10-21"], off);
+  const status = Object.fromEntries(week.map((d) => [d.key, d.status]));
+  assert.equal(status["2026-10-19"], "done");
+  assert.equal(status["2026-10-20"], "off"); // the holiday, not "missed"
+  assert.equal(status["2026-10-21"], "done");
+  assert.equal(status["2026-10-22"], "missed"); // a real trading day with nothing done
+  assert.equal(status["2026-10-23"], "pending"); // today
+  assert.equal(status["2026-10-24"], "off");
+  assert.equal(status["2026-10-25"], "off");
 });
 
-test("an invalid day key is ignored", () => {
-  const r = applyCheckIn(EMPTY_STREAK, "not-a-date");
-  assert.equal(r.isNewDay, false);
-  assert.equal(r.state.current, 0);
+test("getWeek: a day off that was still done shows done, and today off is not 'pending'", () => {
+  const done = getWeek("2026-10-24", ["2026-10-24"], ["2026-10-24", "2026-10-25"]);
+  assert.equal(done.find((d) => d.key === "2026-10-24").status, "done");
+  const idle = getWeek("2026-10-24", [], ["2026-10-24", "2026-10-25"]);
+  const today = idle.find((d) => d.key === "2026-10-24");
+  assert.equal(today.status, "off");
+  assert.equal(today.isToday, true);
 });
 
-test("milestones fire only on the day they are reached", () => {
-  let s = EMPTY_STREAK;
-  const hits = [];
-  let day = "2026-10-01";
-  for (let i = 0; i < 31; i++) {
-    const r = applyCheckIn(s, day);
-    s = r.state;
-    if (r.milestone) hits.push(r.milestone);
-    day = shiftKey(day, 1);
-  }
-  assert.deepEqual(hits, [3, 7, 14, 30]);
+test("getWeek with no offDays behaves as before", () => {
+  const week = getWeek("2026-10-21", ["2026-10-20"]);
+  assert.equal(week.find((d) => d.key === "2026-10-20").status, "done");
+  assert.equal(week.find((d) => d.key === "2026-10-19").status, "missed");
+  assert.equal(week.find((d) => d.key === "2026-10-21").status, "pending");
 });
 
-test("history is capped", () => {
-  let s = EMPTY_STREAK;
-  let day = "2025-01-01";
-  for (let i = 0; i < HISTORY_LIMIT + 20; i++) {
-    s = applyCheckIn(s, day).state;
-    day = shiftKey(day, 1);
-  }
-  assert.equal(s.history.length, HISTORY_LIMIT);
-  assert.equal(s.current, HISTORY_LIMIT + 20);
+test("the message tells people what earns a day, not 'open the app'", () => {
+  assert.match(getStreakMessage({ current: 0 }), /Nifty call or place a trade/i);
+  assert.doesNotMatch(getStreakMessage({ current: 0 }), /open stocksy/i);
+  // Alive, but nothing done yet today: nudge.
+  assert.match(getStreakMessage({ current: 4, doneToday: false }), /keep your streak going/i);
+  // Done today: the usual lines.
+  assert.match(getStreakMessage({ current: 2, doneToday: true }), /two in a row/i);
+  assert.match(getStreakMessage({ current: 1, doneToday: true }), /next trading day/i);
+});
+
+test("a milestone message wins over the nudge", () => {
+  assert.match(getStreakMessage({ current: 7, milestone: 7, doneToday: false }), /full week/i);
 });
 
 // ── sanitizeState / effectiveStreak ─────────────────────────────────────────
@@ -322,5 +328,13 @@ test("a server response becomes a usable state (current survives, bad data does 
   assert.equal(effectiveStreak(ok, "2026-10-24"), 0); // ended
 
   // A server that returned nothing useful must not crash the dashboard.
-  assert.deepEqual(sanitizeState(undefined), { current: 0, longest: 0, lastCheckIn: null, history: [] });
+  assert.deepEqual(sanitizeState(undefined), {
+    current: 0,
+    longest: 0,
+    lastCheckIn: null,
+    aliveThrough: null,
+    history: [],
+    offDays: [],
+    lostStreak: 0,
+  });
 });

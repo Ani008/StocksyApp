@@ -1,5 +1,12 @@
 // Daily streak saved on the server — the rules and the service (no database,
 // no Redis, no real clock; the repository is an in-memory stand-in).
+//
+// Calendar used below (IST, 2026):
+//   Fri 16 Oct   trading         Mon 19 Oct   trading
+//   Sat 17 / Sun 18  weekend     Tue 20 Oct   HOLIDAY (Dussehra)
+//   Wed 21 Oct   trading         Thu 22 Oct   trading
+//   Fri 23 Oct   trading         Sat 24 / Sun 25  weekend
+//   Mon 26 Oct   trading         Tue 27 Oct   trading
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -11,7 +18,6 @@ const ist = (d, hhmm = '12:00') => new Date(`${d}T${hhmm}:00+05:30`);
 
 // ── date helpers ────────────────────────────────────────────────────────────
 test('istDateKey uses the IST calendar day, not UTC', () => {
-  // 00:30 IST on the 22nd is still the 21st in UTC.
   assert.equal(L.istDateKey(ist('2026-10-22', '00:30')), '2026-10-22');
   assert.equal(L.istDateKey(ist('2026-10-22', '23:59')), '2026-10-22');
   assert.equal(L.istDateKey(new Date('2026-10-21T18:45:00Z')), '2026-10-22'); // 00:15 IST
@@ -36,52 +42,113 @@ test('shiftKey and dayDiff cross month, year and leap-day boundaries', () => {
   assert.equal(L.dayDiff('2026-10-22', '2026-10-20'), -2);
 });
 
-// ── computeStreak ───────────────────────────────────────────────────────────
-test('no check-ins: nothing to show', () => {
-  assert.deepEqual(L.computeStreak([], '2026-10-22'), {
-    current: 0,
-    longest: 0,
-    lastCheckIn: null,
-    history: [],
-  });
+// ── trading days ────────────────────────────────────────────────────────────
+test('nextTradingDay skips weekends and exchange holidays', () => {
+  assert.equal(L.nextTradingDay('2026-10-22'), '2026-10-23'); // Thu -> Fri
+  assert.equal(L.nextTradingDay('2026-10-23'), '2026-10-26'); // Fri -> Mon
+  assert.equal(L.nextTradingDay('2026-10-24'), '2026-10-26'); // Sat -> Mon
+  assert.equal(L.nextTradingDay('2026-10-19'), '2026-10-21'); // Mon -> Wed (Tue is Dussehra)
 });
 
-test('consecutive days build the streak; today counts', () => {
-  const s = L.computeStreak(['2026-10-20', '2026-10-21', '2026-10-22'], '2026-10-22');
+test('isConsecutive: no trading day may fall between the two days', () => {
+  assert.equal(L.isConsecutive('2026-10-22', '2026-10-23'), true);
+  assert.equal(L.isConsecutive('2026-10-23', '2026-10-26'), true); // over the weekend
+  assert.equal(L.isConsecutive('2026-10-19', '2026-10-21'), true); // over a holiday
+  assert.equal(L.isConsecutive('2026-10-21', '2026-10-23'), false); // Thursday in between
+  assert.equal(L.isConsecutive('2026-10-23', '2026-10-27'), false); // Monday in between
+  assert.equal(L.isConsecutive('2026-10-23', '2026-10-23'), false); // same day
+  assert.equal(L.isConsecutive('2026-10-23', '2026-10-22'), false); // backwards
+});
+
+test('aliveThrough is the next trading day', () => {
+  assert.equal(L.aliveThrough('2026-10-23'), '2026-10-26');
+  assert.equal(L.aliveThrough('2026-10-22'), '2026-10-23');
+  assert.equal(L.aliveThrough(null), null);
+  assert.equal(L.aliveThrough('nope'), null);
+});
+
+test('offDaysAround lists weekends and holidays within a week of today', () => {
+  const off = L.offDaysAround('2026-10-21');
+  for (const d of ['2026-10-17', '2026-10-18', '2026-10-20', '2026-10-24', '2026-10-25']) {
+    assert.ok(off.includes(d), `${d} should be off`);
+  }
+  for (const d of ['2026-10-19', '2026-10-21', '2026-10-22', '2026-10-23']) {
+    assert.ok(!off.includes(d), `${d} should be a trading day`);
+  }
+  assert.deepEqual(L.offDaysAround('nope'), []);
+});
+
+// ── computeStreak ───────────────────────────────────────────────────────────
+test('no active days: nothing to show', () => {
+  const s = L.computeStreak([], '2026-10-22');
+  assert.equal(s.current, 0);
+  assert.equal(s.longest, 0);
+  assert.equal(s.lastCheckIn, null);
+  assert.equal(s.aliveThrough, null);
+  assert.deepEqual(s.history, []);
+  assert.equal(s.lostStreak, 0);
+});
+
+test('consecutive trading days build the streak; today counts', () => {
+  const s = L.computeStreak(['2026-10-21', '2026-10-22', '2026-10-23'], '2026-10-23');
   assert.equal(s.current, 3);
   assert.equal(s.longest, 3);
-  assert.equal(s.lastCheckIn, '2026-10-22');
+  assert.equal(s.lastCheckIn, '2026-10-23');
 });
 
-test('a streak is still alive on the morning after (last check-in = yesterday)', () => {
-  const s = L.computeStreak(['2026-10-20', '2026-10-21'], '2026-10-22');
+test('the weekend does not break a streak: Friday then Monday is 2 in a row', () => {
+  const s = L.computeStreak(['2026-10-22', '2026-10-23', '2026-10-26'], '2026-10-26');
+  assert.equal(s.current, 3);
+});
+
+test('a market holiday does not break a streak: Monday then Wednesday is 2 in a row', () => {
+  const s = L.computeStreak(['2026-10-19', '2026-10-21'], '2026-10-21');
   assert.equal(s.current, 2);
 });
 
-test('a streak whose last check-in is older than yesterday has ended', () => {
-  const s = L.computeStreak(['2026-10-18', '2026-10-19', '2026-10-20'], '2026-10-22');
+test('a streak stays alive through the weekend and Monday morning', () => {
+  const days = ['2026-10-22', '2026-10-23'];
+  assert.equal(L.computeStreak(days, '2026-10-24').current, 2); // Saturday
+  assert.equal(L.computeStreak(days, '2026-10-25').current, 2); // Sunday
+  assert.equal(L.computeStreak(days, '2026-10-26').current, 2); // Monday, not done yet
+});
+
+test('missing a trading day ends the streak (the record is kept)', () => {
+  const days = ['2026-10-21', '2026-10-22', '2026-10-23'];
+  const s = L.computeStreak(days, '2026-10-27'); // Monday 26th passed with nothing
   assert.equal(s.current, 0);
-  assert.equal(s.longest, 3); // the record is kept
-  assert.equal(s.lastCheckIn, '2026-10-20');
+  assert.equal(s.longest, 3);
+  assert.equal(s.lastCheckIn, '2026-10-23');
 });
 
 test('a gap restarts the run; longest remembers the best one', () => {
-  const days = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-20', '2026-10-21'];
-  const s = L.computeStreak(days, '2026-10-21');
+  const days = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-22', '2026-10-23'];
+  const s = L.computeStreak(days, '2026-10-23');
   assert.equal(s.current, 2);
   assert.equal(s.longest, 4);
 });
 
+test('lostStreak: today starting a new run reports the run it replaced', () => {
+  const s = L.computeStreak(['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-23'], '2026-10-23');
+  assert.equal(s.current, 1);
+  assert.equal(s.lostStreak, 3);
+});
+
+test('lostStreak is 0 when the run simply continues, or the user is brand new', () => {
+  assert.equal(L.computeStreak(['2026-10-22', '2026-10-23'], '2026-10-23').lostStreak, 0);
+  assert.equal(L.computeStreak(['2026-10-23'], '2026-10-23').lostStreak, 0);
+});
+
 test('unordered, duplicate and invalid keys are cleaned up', () => {
-  const s = L.computeStreak(['2026-10-22', 'nope', '2026-10-21', '2026-10-21', '2026-02-31'], '2026-10-22');
+  const s = L.computeStreak(['2026-10-23', 'nope', '2026-10-22', '2026-10-22', '2026-02-31'], '2026-10-23');
   assert.equal(s.current, 2);
-  assert.deepEqual(s.history, ['2026-10-21', '2026-10-22']);
+  assert.deepEqual(s.history, ['2026-10-22', '2026-10-23']);
 });
 
 test('a day dated after today is ignored (clock skew can never inflate a streak)', () => {
-  const s = L.computeStreak(['2026-10-21', '2026-10-22', '2026-10-23'], '2026-10-22');
+  const s = L.computeStreak(['2026-10-22', '2026-10-23', '2026-10-26'], '2026-10-23');
   assert.equal(s.current, 2);
-  assert.equal(s.lastCheckIn, '2026-10-22');
+  assert.equal(s.lastCheckIn, '2026-10-23');
 });
 
 test('history is capped to the most recent HISTORY_LIMIT days', () => {
@@ -92,20 +159,6 @@ test('history is capped to the most recent HISTORY_LIMIT days', () => {
   assert.equal(s.history.length, L.HISTORY_LIMIT);
   assert.equal(s.history[s.history.length - 1], today);
   assert.equal(s.current, L.HISTORY_LIMIT + 50); // the streak itself is not capped
-});
-
-// ── lostStreakFor ───────────────────────────────────────────────────────────
-test('lostStreakFor: continuing a streak loses nothing', () => {
-  assert.equal(L.lostStreakFor(['2026-10-20', '2026-10-21'], '2026-10-22'), 0);
-});
-
-test('lostStreakFor: returns the length of the run that just ended', () => {
-  assert.equal(L.lostStreakFor(['2026-10-17', '2026-10-18', '2026-10-19'], '2026-10-22'), 3);
-});
-
-test('lostStreakFor: first ever check-in has nothing to lose; today is never "prior"', () => {
-  assert.equal(L.lostStreakFor([], '2026-10-22'), 0);
-  assert.equal(L.lostStreakFor(['2026-10-22'], '2026-10-22'), 0);
 });
 
 // ── acceptableImportDays ────────────────────────────────────────────────────
@@ -152,45 +205,80 @@ function fakeRepo() {
   };
 }
 
+// Total days recorded across all users (reading must not count as recording).
+const recorded = (repo) => [...repo.rows.values()].reduce((n, m) => n + m.size, 0);
+
 const setup = () => {
   const repo = fakeRepo();
   return { repo, svc: createStreakService(repo) };
 };
 
-test('service: first check-in starts a streak of 1 and is a new day', async () => {
+test('service: the first order of the day starts a streak and is a new day', async () => {
   const { svc } = setup();
-  const r = await svc.checkIn('u1', { now: ist('2026-10-20') });
+  const r = await svc.recordActivity('u1', 'order', { now: ist('2026-10-22') });
   assert.equal(r.isNewDay, true);
   assert.equal(r.current, 1);
-  assert.equal(r.today, '2026-10-20');
-  assert.equal(r.lostStreak, 0);
+  assert.equal(r.today, '2026-10-22');
 });
 
-test('service: opening twice in a day (two devices, a retry) counts once', async () => {
+test('service: a Nifty call counts the same as an order', async () => {
   const { svc } = setup();
-  const a = await svc.checkIn('u1', { now: ist('2026-10-20', '09:00') });
-  const b = await svc.checkIn('u1', { now: ist('2026-10-20', '21:00') });
+  const r = await svc.recordActivity('u1', 'nifty', { now: ist('2026-10-22', '09:30') });
+  assert.equal(r.isNewDay, true);
+  assert.equal(r.current, 1);
+});
+
+test('service: an unknown source is refused (only real activity earns a day)', async () => {
+  const { svc, repo } = setup();
+  await assert.rejects(() => svc.recordActivity('u1', 'open', { now: ist('2026-10-22') }), /Unknown streak source/);
+  await assert.rejects(() => svc.recordActivity('u1', undefined, { now: ist('2026-10-22') }), /Unknown streak source/);
+  assert.equal(recorded(repo), 0);
+});
+
+test('service: several orders, plus a call, in one day count once', async () => {
+  const { svc } = setup();
+  const a = await svc.recordActivity('u1', 'nifty', { now: ist('2026-10-22', '09:30') });
+  const b = await svc.recordActivity('u1', 'order', { now: ist('2026-10-22', '11:00') });
+  const c = await svc.recordActivity('u1', 'order', { now: ist('2026-10-22', '14:00') });
   assert.equal(a.isNewDay, true);
   assert.equal(b.isNewDay, false);
-  assert.equal(b.current, 1);
+  assert.equal(c.isNewDay, false);
+  assert.equal(c.current, 1);
 });
 
-test('service: consecutive days grow the streak and it survives a "redeploy"', async () => {
+test('service: getState alone never earns a day (opening the app does nothing)', async () => {
+  const { svc, repo } = setup();
+  const r = await svc.getState('u1', { now: ist('2026-10-22') });
+  assert.equal(r.current, 0);
+  assert.equal(r.isNewDay, false);
+  assert.equal(recorded(repo), 0);
+});
+
+test('service: the streak builds across days, over a weekend, and survives a redeploy', async () => {
   const { svc } = setup();
-  await svc.checkIn('u1', { now: ist('2026-10-20') });
-  await svc.checkIn('u1', { now: ist('2026-10-21') });
-  // A brand new install / new origin has nothing local, but the server remembers.
-  const r = await svc.checkIn('u1', { now: ist('2026-10-22'), importDays: [] });
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-22') }); // Thu
+  await svc.recordActivity('u1', 'nifty', { now: ist('2026-10-23', '09:30') }); // Fri
+  // Monday, on a brand new install: the server remembers.
+  const r = await svc.recordActivity('u1', 'order', { now: ist('2026-10-26') });
   assert.equal(r.current, 3);
   assert.equal(r.longest, 3);
-  assert.deepEqual(r.history, ['2026-10-20', '2026-10-21', '2026-10-22']);
+  assert.deepEqual(r.history, ['2026-10-22', '2026-10-23', '2026-10-26']);
 });
 
-test('service: missing a day reports the streak that was lost', async () => {
+test('service: reading on Saturday still shows the streak', async () => {
   const { svc } = setup();
-  await svc.checkIn('u1', { now: ist('2026-10-18') });
-  await svc.checkIn('u1', { now: ist('2026-10-19') });
-  const r = await svc.checkIn('u1', { now: ist('2026-10-22') });
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-22') });
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-23') });
+  const r = await svc.getState('u1', { now: ist('2026-10-24') });
+  assert.equal(r.current, 2);
+  assert.equal(r.aliveThrough, '2026-10-26');
+});
+
+test('service: missing a trading day ends it, and the next activity reports what was lost', async () => {
+  const { svc } = setup();
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-21') });
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-22') });
+  const r = await svc.recordActivity('u1', 'order', { now: ist('2026-10-27') }); // skipped Fri + Mon
   assert.equal(r.current, 1);
   assert.equal(r.lostStreak, 2);
   assert.equal(r.longest, 2);
@@ -198,58 +286,47 @@ test('service: missing a day reports the streak that was lost', async () => {
 
 test('service: the day follows IST, not UTC (00:10 IST is already the new day)', async () => {
   const { svc } = setup();
-  await svc.checkIn('u1', { now: ist('2026-10-21', '23:50') });
-  const r = await svc.checkIn('u1', { now: ist('2026-10-22', '00:10') });
-  assert.equal(r.today, '2026-10-22');
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-22', '23:50') });
+  const r = await svc.recordActivity('u1', 'order', { now: ist('2026-10-23', '00:10') });
+  assert.equal(r.today, '2026-10-23');
   assert.equal(r.current, 2);
 });
 
 test('service: users are separate', async () => {
   const { svc } = setup();
-  await svc.checkIn('u1', { now: ist('2026-10-21') });
-  await svc.checkIn('u1', { now: ist('2026-10-22') });
-  const other = await svc.checkIn('u2', { now: ist('2026-10-22') });
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-22') });
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-23') });
+  const other = await svc.recordActivity('u2', 'order', { now: ist('2026-10-23') });
   assert.equal(other.current, 1);
 });
 
-test('service: getState reads without recording a day', async () => {
+test('service: the old on-device streak is imported once and records nothing for today', async () => {
   const { svc, repo } = setup();
-  await svc.checkIn('u1', { now: ist('2026-10-21') });
-  const r = await svc.getState('u1', { now: ist('2026-10-22') });
-  assert.equal(r.current, 1);
+  const r = await svc.importLegacy('u1', ['2026-10-21', '2026-10-22'], { now: ist('2026-10-23') });
+  assert.equal(r.current, 2); // alive: Thursday was yesterday
   assert.equal(r.isNewDay, false);
-  assert.equal(repo.rows.get('u1').size, 1); // nothing was added
+  assert.equal(repo.rows.get('u1').get('2026-10-22'), 'import');
+  assert.equal(repo.rows.get('u1').has('2026-10-23'), false); // today still has to be earned
 });
 
-test('service: the old on-device streak is imported once, on the first sync', async () => {
-  const { svc, repo } = setup();
-  const local = ['2026-10-20', '2026-10-21'];
-  const r = await svc.checkIn('u1', { now: ist('2026-10-22'), importDays: local });
-  assert.equal(r.current, 3); // 20th, 21st (imported) + 22nd (live)
-  assert.equal(r.isNewDay, true);
+test('service: after an import, today\'s order continues the imported streak', async () => {
+  const { svc } = setup();
+  await svc.importLegacy('u1', ['2026-10-21', '2026-10-22'], { now: ist('2026-10-23') });
+  const r = await svc.recordActivity('u1', 'order', { now: ist('2026-10-23') });
+  assert.equal(r.current, 3);
   assert.equal(r.lostStreak, 0);
-  assert.equal(repo.rows.get('u1').get('2026-10-21'), 'import');
-  assert.equal(repo.rows.get('u1').get('2026-10-22'), 'live');
 });
 
 test('service: import is refused once the account has earlier days (no later padding)', async () => {
   const { svc } = setup();
-  await svc.checkIn('u1', { now: ist('2026-10-21') }); // first sync, nothing to import
-  const r = await svc.checkIn('u1', {
-    now: ist('2026-10-22'),
-    importDays: ['2026-09-01', '2026-09-02', '2026-09-03', '2026-10-20'],
-  });
-  assert.equal(r.current, 2); // 21st + 22nd only: the offered days were ignored
-  assert.deepEqual(r.history, ['2026-10-21', '2026-10-22']);
+  await svc.recordActivity('u1', 'order', { now: ist('2026-10-22') });
+  const r = await svc.importLegacy('u1', ['2026-09-01', '2026-09-02', '2026-10-21'], { now: ist('2026-10-23') });
+  assert.deepEqual(r.history, ['2026-10-22']); // the offered days were ignored
 });
 
 test('service: an import cannot claim today or the future', async () => {
   const { svc, repo } = setup();
-  const r = await svc.checkIn('u1', {
-    now: ist('2026-10-22'),
-    importDays: ['2026-10-22', '2026-10-23', '2026-11-01'],
-  });
-  assert.equal(r.current, 1);
-  assert.equal(repo.rows.get('u1').size, 1);
-  assert.equal(repo.rows.get('u1').get('2026-10-22'), 'live');
+  const r = await svc.importLegacy('u1', ['2026-10-22', '2026-10-23', '2026-11-01'], { now: ist('2026-10-22') });
+  assert.equal(r.current, 0);
+  assert.equal(recorded(repo), 0);
 });

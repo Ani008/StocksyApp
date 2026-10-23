@@ -62,7 +62,7 @@ function DayCell({ day, index, inRun }) {
     return () => run.stop();
   }, [day.status, index, pop]);
 
-  // Today, not yet checked in: a ring that breathes.
+  // Today, nothing done yet: a ring that breathes.
   useEffect(() => {
     if (day.status !== "pending") return undefined;
     const run = Animated.loop(
@@ -77,6 +77,8 @@ function DayCell({ day, index, inRun }) {
 
   const done = day.status === "done";
   const missed = day.status === "missed";
+  // A weekend or market holiday: nothing to do, so it is neither missed nor today's task.
+  const off = day.status === "off";
 
   return (
     <View style={styles.col}>
@@ -103,7 +105,7 @@ function DayCell({ day, index, inRun }) {
             // already inside a joined pill.
             done && day.isToday && styles.cellToday,
             done && !day.isToday && !inRun && styles.cellLone,
-            day.isToday && !done && styles.cellToday,
+            day.isToday && !done && !off && styles.cellToday,
             { transform: [{ scale: pop }] },
           ]}
         >
@@ -113,8 +115,9 @@ function DayCell({ day, index, inRun }) {
             <Text
               style={[
                 styles.cellText,
-                day.isToday && { color: Colors.white },
+                day.isToday && !off && { color: Colors.white },
                 missed && styles.cellTextMissed,
+                off && styles.cellTextOff,
               ]}
             >
               {day.dayNumber}
@@ -331,6 +334,7 @@ const styles = StyleSheet.create({
   cellLone: { backgroundColor: LONE },
   cellText: { color: Colors.textSecondary, fontSize: 13, fontWeight: "600" },
   cellTextMissed: { color: Colors.textMuted, textDecorationLine: "line-through" },
+  cellTextOff: { color: Colors.textMuted, fontWeight: "500" },
   pulse: {
     position: "absolute",
     width: DAY,

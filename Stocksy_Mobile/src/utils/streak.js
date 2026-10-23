@@ -2,8 +2,13 @@
  * Pure helpers for the daily streak. No React, react-native or storage here
  * (the caller passes "today" in) so `node --test` can run them.
  *
- * A "day" is a local calendar day, written as a "YYYY-MM-DD" key. A day counts
- * toward the streak once the person has opened Stocksy on it (a check-in).
+ * A "day" is an IST calendar day, written as a "YYYY-MM-DD" key. A day counts
+ * toward the streak once the person has DONE something on it: made their daily
+ * Nifty call, or placed a buy / sell order. Just opening the app does not count.
+ *
+ * The server keeps and judges the streak (Stocksy_Server/services/streakLogic.js:
+ * streaks run on trading days, so weekends and market holidays neither add to
+ * nor break one). This file only shapes what the server sends for display.
  */
 
 // How many past check-in days we keep. The year calendar shows up to 371 days
@@ -16,7 +21,16 @@ export const EMPTY_STREAK = {
   current: 0,
   longest: 0,
   lastCheckIn: null,
+  // The last day `current` stays alive without more activity (the next trading
+  // day after lastCheckIn), as the server works it out.
+  aliveThrough: null,
   history: [],
+  // Weekends and holidays around today, so the week strip can show them as
+  // "off" instead of "missed".
+  offDays: [],
+  // When today's activity just started a new run: the length of the run it
+  // replaced (0 otherwise). Feeds the "your streak ended" line.
+  lostStreak: 0,
 };
 
 export const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
@@ -70,12 +84,15 @@ export function shiftKey(key, days) {
  * hand-edited value must never crash the dashboard.
  */
 export function sanitizeState(raw) {
-  if (!raw || typeof raw !== "object") return { ...EMPTY_STREAK, history: [] };
+  if (!raw || typeof raw !== "object") return { ...EMPTY_STREAK, history: [], offDays: [] };
 
   const history = Array.isArray(raw.history)
     ? [...new Set(raw.history.filter(isValidKey))].sort().slice(-HISTORY_LIMIT)
     : [];
   const lastCheckIn = isValidKey(raw.lastCheckIn) ? raw.lastCheckIn : null;
+  const aliveThrough = lastCheckIn && isValidKey(raw.aliveThrough) ? raw.aliveThrough : null;
+  const offDays = Array.isArray(raw.offDays) ? [...new Set(raw.offDays.filter(isValidKey))].sort() : [];
+  const lostStreak = Number.isFinite(raw.lostStreak) && raw.lostStreak > 0 ? Math.floor(raw.lostStreak) : 0;
   const current =
     Number.isFinite(raw.current) && raw.current > 0 && lastCheckIn
       ? Math.floor(raw.current)
@@ -85,74 +102,37 @@ export function sanitizeState(raw) {
     Number.isFinite(raw.longest) && raw.longest > 0 ? Math.floor(raw.longest) : 0,
   );
 
-  return { current, longest, lastCheckIn, history };
+  return { current, longest, lastCheckIn, aliveThrough, history, offDays, lostStreak };
 }
 
 /**
- * Record a check-in for `todayKey`.
- *
- * Returns { state, isNewDay, lostStreak, milestone }:
- *   isNewDay    true only the first time today is recorded
- *   lostStreak  length of the streak that just ended (0 if none ended)
- *   milestone   the streak length if today's check-in hit a milestone, else 0
- */
-export function applyCheckIn(prev, todayKey) {
-  const state = sanitizeState(prev);
-  const unchanged = { state, isNewDay: false, lostStreak: 0, milestone: 0 };
-
-  if (!isValidKey(todayKey)) return unchanged;
-
-  if (state.lastCheckIn) {
-    const gap = dayDiff(state.lastCheckIn, todayKey);
-    // Already counted today, or the device clock moved backwards. Either way
-    // leave the streak alone rather than punish the person for it.
-    if (gap <= 0) {
-      if (gap === 0 && !state.history.includes(todayKey)) {
-        state.history = [...state.history, todayKey].sort().slice(-HISTORY_LIMIT);
-      }
-      return unchanged;
-    }
-  }
-
-  const gap = state.lastCheckIn ? dayDiff(state.lastCheckIn, todayKey) : null;
-  const continues = gap === 1;
-  const lostStreak = state.current > 0 && !continues ? state.current : 0;
-  const current = continues ? state.current + 1 : 1;
-
-  const next = {
-    current,
-    longest: Math.max(state.longest, current),
-    lastCheckIn: todayKey,
-    history: [...state.history, todayKey].sort().slice(-HISTORY_LIMIT),
-  };
-
-  return {
-    state: next,
-    isNewDay: true,
-    lostStreak,
-    milestone: MILESTONES.includes(current) ? current : 0,
-  };
-}
-
-/**
- * The streak to *display* for `todayKey`. A streak whose last check-in is
- * older than yesterday has already ended, even if nobody has opened the app
- * yet today to reset it.
+ * The streak to *display* for `todayKey`. A streak that was not kept alive
+ * through its last trading day has already ended, even if nothing has told the
+ * app yet.
  */
 export function effectiveStreak(state, todayKey) {
   const s = sanitizeState(state);
   if (!s.lastCheckIn || !isValidKey(todayKey)) return 0;
+  // The server says how long it stays alive (it knows the market calendar:
+  // Friday's streak is still alive on Monday). A copy saved before it did has
+  // no such date, so fall back to "yesterday or today".
+  if (s.aliveThrough) return todayKey <= s.aliveThrough ? s.current : 0;
   return dayDiff(s.lastCheckIn, todayKey) <= 1 ? s.current : 0;
 }
 
 /**
  * The Monday-to-Sunday week containing `todayKey`, one entry per day:
  *   { key, label, dayNumber, status, isToday }
- * status: "done" | "missed" | "pending" (today, not checked in yet) | "upcoming"
+ * status: "done" | "off" (weekend or market holiday, nothing to do) |
+ *         "missed" | "pending" (today, nothing done yet) | "upcoming"
+ *
+ * `offDays` comes from the server (it knows the market holidays). A day that
+ * is off but was still done (an order placed on a special session) shows done.
  */
-export function getWeek(todayKey, history = []) {
+export function getWeek(todayKey, history = [], offDays = []) {
   if (!isValidKey(todayKey)) return [];
   const done = new Set(history);
+  const off = new Set(offDays);
   const dow = new Date(keyToUtcMs(todayKey)).getUTCDay(); // 0 = Sunday
   const monday = shiftKey(todayKey, -((dow + 6) % 7));
 
@@ -161,6 +141,7 @@ export function getWeek(todayKey, history = []) {
     const isToday = key === todayKey;
     let status;
     if (done.has(key)) status = "done";
+    else if (off.has(key)) status = "off";
     else if (isToday) status = "pending";
     else if (key < todayKey) status = "missed";
     else status = "upcoming";
@@ -186,7 +167,7 @@ export function getDoneRuns(week) {
 }
 
 /** The line shown under the week strip. */
-export function getStreakMessage({ current = 0, lostStreak = 0, milestone = 0 } = {}) {
+export function getStreakMessage({ current = 0, lostStreak = 0, milestone = 0, doneToday = true } = {}) {
   if (milestone >= 365) return "A full year, every single day. Legendary.";
   if (milestone >= 100) return `${milestone} days straight. That's elite consistency.`;
   if (milestone >= 30) return `${milestone} days in a row. This is a real habit now.`;
@@ -194,11 +175,13 @@ export function getStreakMessage({ current = 0, lostStreak = 0, milestone = 0 } 
   if (milestone >= 7) return "A full week! Consistency beats timing.";
   if (milestone >= 3) return "You're on fire! Three days in a row.";
 
-  if (current <= 0) return "Open Stocksy every day to start a streak.";
+  if (current <= 0) return "Make your Nifty call or place a trade to start a streak.";
+  // A streak that is alive but has nothing done yet today.
+  if (!doneToday) return "Make your Nifty call or place a trade to keep your streak going.";
   if (current === 1) {
     return lostStreak > 0
       ? `Your ${lostStreak}-day streak ended. A fresh one starts today.`
-      : "Day one is locked in. Come back tomorrow to build it.";
+      : "Day one is locked in. Come back next trading day to build it.";
   }
   if (current === 2) return "Two in a row. Momentum is building.";
   if (current < 7) return "You're on fire! Keep the chain going.";

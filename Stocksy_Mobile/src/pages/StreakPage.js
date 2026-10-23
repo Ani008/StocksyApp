@@ -11,7 +11,8 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 /**
  * The streak body: today's streak card, then a year of activity.
- * Display only. The Home screen is what records the daily check-in.
+ * Display only. A day is earned by placing an order or making the Nifty call;
+ * the server records it, this page just shows it.
  *
  * Exported separately so the Daily Challenge page can show the exact same
  * content under its "Streaks" toggle. It renders no header / ScrollView of its
@@ -21,7 +22,7 @@ export const StreakContent = ({ style }) => {
   const streak = useStreak({ readOnly: true });
   const refresh = streak.recheck;
 
-  // Re-read on focus so it is right after midnight or a new check-in.
+  // Re-read on focus so it is right after midnight or a newly earned day.
   useFocusEffect(
     React.useCallback(() => {
       refresh();

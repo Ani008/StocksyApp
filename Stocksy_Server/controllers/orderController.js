@@ -2,6 +2,7 @@ const { placeOrder, cancelOrder, getOrders } = require('../services/orderService
 const { getPositions, getPortfolioSummary, getTrades } = require('../services/positionService');
 const { sendError } = require('../utils/errors');
 const { readIdempotencyKey } = require('../utils/idempotency');
+const { recordActivitySafe } = require('../services/streakService');
 const logger = require('../utils/logger');
 
 // ── POST /api/orders ──────────────────────────────────────────────────────────
@@ -21,6 +22,13 @@ async function createOrder(req, res) {
       idempotencyKey,
       onReplay: () => { replayed = true; },
     });
+
+    // Placing an order (delivery or intraday, buy or sell) is what earns the
+    // day's streak. The order already exists at this point, so this can never
+    // fail the request: errors are logged inside and swallowed. Only this route
+    // counts. Orders the system creates itself (auto square-off, triggered
+    // stop-losses) don't go through here and must not earn a day.
+    await recordActivitySafe(userId, 'order');
 
     if (replayed) res.set('Idempotent-Replayed', 'true');
     return res.status(201).json({
