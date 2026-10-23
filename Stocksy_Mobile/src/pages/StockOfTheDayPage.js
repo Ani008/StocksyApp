@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -15,6 +15,13 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { INSTRUMENTS } from "./SearchPage";
 import useStockOfTheDay from "../hooks/useStockOfTheDay";
+import {
+  answersText,
+  formatValue,
+  isGrowthLabel,
+  scoreHeadline,
+  sidesOf,
+} from "../utils/stockOfTheDay";
 import { Colors, Shadows, Typography, fontScale, moderateScale } from "../theme";
 
 const LOGO_TOKEN = "pk_Bym4BAakTJudMK4MGnfpnw"; // same public logo.dev key used across the app
@@ -23,6 +30,7 @@ const logoUri = (domain) => `https://img.logo.dev/${domain}?token=${LOGO_TOKEN}`
 // The server sends which stocks to show; the logo domain lives in the app's own
 // stock list, so look it up by instrument key.
 const DOMAIN_BY_KEY = new Map(INSTRUMENTS.map((s) => [s.key, s.domain]));
+const META_BY_KEY = new Map(INSTRUMENTS.map((s) => [s.key, s]));
 
 /**
  * One big tappable company logo. If the logo can't load (or we have no domain
@@ -160,15 +168,149 @@ function RoundView({ round, total, answered, sector, submitting, onPick }) {
   );
 }
 
-const headlineFor = (score, total) => {
-  if (score === total) return "Perfect score!";
-  if (score >= Math.ceil(total * 0.6)) return "Nice one!";
-  return "Tougher than it looks";
-};
+/** Small round company logo used on the result cards. */
+function MiniLogo({ stock, size }) {
+  const domain = DOMAIN_BY_KEY.get(stock.key);
+  const [failed, setFailed] = useState(false);
+  return (
+    <View style={[styles.miniLogo, { width: size, height: size, borderRadius: size * 0.28 }]}>
+      {failed || !domain ? (
+        <Text style={styles.miniFallback}>{stock.symbol.slice(0, 2).toUpperCase()}</Text>
+      ) : (
+        <Image
+          source={{ uri: logoUri(domain) }}
+          style={{ width: size * 0.66, height: size * 0.66 }}
+          resizeMode="contain"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </View>
+  );
+}
 
-/** The finished game: "3 out of 5", plus what each question's answer was. */
-function ResultView({ result, sector, onDone }) {
-  const nameOf = (r, key) => (r.left.key === key ? r.left.name : r.right.name);
+/** One side of a result card: logo, name, the number compared, and who won / who you picked. */
+function SideColumn({ stock, valueText, isWinner, isPicked }) {
+  return (
+    <View style={[styles.side, isWinner && styles.sideWinner]}>
+      <MiniLogo stock={stock} size={moderateScale(56)} />
+      <Text style={styles.sideName} numberOfLines={2}>
+        {stock.name}
+      </Text>
+      <Text style={[styles.sideValue, isWinner && styles.sideValueWinner]}>{valueText}</Text>
+      <View style={styles.tagRow}>
+        {isWinner && (
+          <View style={[styles.tag, styles.tagWinner]}>
+            <Text style={styles.tagWinnerText}>HIGHER</Text>
+          </View>
+        )}
+        {isPicked && (
+          <View style={[styles.tag, styles.tagPick]}>
+            <Text style={styles.tagPickText}>YOUR PICK</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+/** One round of the result: the question, both companies' numbers, right/wrong, View stock. */
+function RevealCard({ round, anim, onViewStock }) {
+  const { winner, picked } = sidesOf(round);
+  const signed = isGrowthLabel(round.label);
+  const fmt = (v) => formatValue(round.unit, v, { signed });
+  const winnerStock = winner === "left" ? round.left : round.right;
+
+  return (
+    <Animated.View
+      style={[
+        styles.revealCard,
+        {
+          opacity: anim,
+          transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+        },
+      ]}
+    >
+      <View style={styles.revealHead}>
+        <Ionicons
+          name={round.correct ? "checkmark-circle" : "close-circle"}
+          size={moderateScale(22)}
+          color={round.correct ? Colors.success : Colors.danger}
+        />
+        <View style={styles.revealHeadText}>
+          <Text style={styles.revealQuestion}>{round.text}</Text>
+          <Text style={styles.revealMeta}>
+            {round.label}
+            {round.fiscalYear ? ` · FY${round.fiscalYear}` : ""}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.sides}>
+        <SideColumn
+          stock={round.left}
+          valueText={fmt(round.leftValue)}
+          isWinner={winner === "left"}
+          isPicked={picked === "left"}
+        />
+        <SideColumn
+          stock={round.right}
+          valueText={fmt(round.rightValue)}
+          isWinner={winner === "right"}
+          isPicked={picked === "right"}
+        />
+      </View>
+
+      <TouchableOpacity
+        onPress={() => onViewStock(winnerStock)}
+        style={styles.viewBtn}
+        accessibilityRole="button"
+        accessibilityLabel={`View ${winnerStock.name}`}
+      >
+        <Text style={styles.viewBtnText}>View {winnerStock.symbol}</Text>
+        <Ionicons name="arrow-forward" size={moderateScale(14)} color={Colors.primary} />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+/**
+ * The finished game. The score pops in and counts up, then each question's
+ * card slides in one after another with the real numbers behind it.
+ */
+function ResultView({ result, sector, navigation, onDone }) {
+  const { score, total, rounds } = result;
+
+  const pop = useRef(new Animated.Value(0)).current; // score circle scale/opacity
+  const count = useRef(new Animated.Value(0)).current; // 0 -> score
+  const cardAnims = useRef(rounds.map(() => new Animated.Value(0))).current;
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    const id = count.addListener(({ value }) => setShown(Math.round(value)));
+    Animated.sequence([
+      Animated.spring(pop, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 14 }),
+      // The count drives JS state, so it can't use the native driver.
+      Animated.timing(count, { toValue: score, duration: 200 + score * 250, useNativeDriver: false }),
+      Animated.stagger(
+        140,
+        cardAnims.map((a) => Animated.timing(a, { toValue: 1, duration: 320, useNativeDriver: true })),
+      ),
+    ]).start();
+    return () => count.removeListener(id);
+    // The result for a finished day never changes, so this runs once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const viewStock = (stock) => {
+    const meta = META_BY_KEY.get(stock.key);
+    navigation.navigate("StockDetail", {
+      instrumentKey: stock.key,
+      symbol: stock.symbol,
+      name: stock.name,
+      sector: meta?.sector || sector,
+      domain: meta?.domain,
+    });
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.resultContent} showsVerticalScrollIndicator={false}>
@@ -176,31 +318,25 @@ function ResultView({ result, sector, onDone }) {
         <Text style={styles.chipText}>{sector.toUpperCase()}</Text>
       </View>
 
-      <Text style={styles.headline}>{headlineFor(result.score, result.total)}</Text>
-      <View style={styles.scoreCircle}>
-        <Text style={styles.scoreBig}>{result.score}</Text>
-        <Text style={styles.scoreOf}>out of {result.total}</Text>
-      </View>
+      <Animated.Text style={[styles.headline, { opacity: pop }]}>{scoreHeadline(score, total)}</Animated.Text>
+      <Animated.View
+        style={[
+          styles.scoreCircle,
+          { opacity: pop, transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }] },
+        ]}
+        accessible
+        accessibilityLabel={`You got ${score} out of ${total} right`}
+      >
+        <Text style={styles.scoreBig}>{shown}</Text>
+        <Text style={styles.scoreOf}>out of {total}</Text>
+      </Animated.View>
       <Text style={styles.scoreCaption}>
-        {result.score === 1 ? "1 answer" : `${result.score} answers`} right today. Come back tomorrow for a new sector.
+        {answersText(score)} right today. Come back tomorrow for a new sector.
       </Text>
 
-      <View style={styles.recap}>
-        {result.rounds.map((r) => (
-          <View key={r.index} style={styles.recapRow}>
-            <Ionicons
-              name={r.correct ? "checkmark-circle" : "close-circle"}
-              size={moderateScale(24)}
-              color={r.correct ? Colors.success : Colors.danger}
-            />
-            <View style={styles.recapText}>
-              <Text style={styles.recapQuestion}>{r.text}</Text>
-              <Text style={styles.recapAnswer}>
-                {r.label}: {nameOf(r, r.winnerKey)} was higher
-                {r.correct ? "" : `. You picked ${nameOf(r, r.pickedKey)}.`}
-              </Text>
-            </View>
-          </View>
+      <View style={styles.cards}>
+        {rounds.map((r, i) => (
+          <RevealCard key={r.index} round={r} anim={cardAnims[i]} onViewStock={viewStock} />
         ))}
       </View>
 
@@ -250,7 +386,13 @@ const StockOfTheDayPage = ({ navigation }) => {
       </View>
     );
   } else if (state.complete && state.result) {
-    content = <ResultView result={state.result} sector={state.sector} onDone={goBack} />;
+    content = <ResultView
+        key={state.date}
+        result={state.result}
+        sector={state.sector}
+        navigation={navigation}
+        onDone={goBack}
+      />;
   } else if (current) {
     content = (
       <RoundView
@@ -492,30 +634,107 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(16),
     paddingHorizontal: moderateScale(12),
   },
-  recap: {
+  cards: {
     alignSelf: "stretch",
     marginTop: moderateScale(28),
+    gap: moderateScale(14),
+  },
+  revealCard: {
     backgroundColor: Colors.surface,
     borderRadius: moderateScale(20),
     padding: moderateScale(16),
-    gap: moderateScale(16),
     ...Shadows.card,
   },
-  recapRow: {
+  revealHead: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: moderateScale(12),
+    gap: moderateScale(10),
   },
-  recapText: { flex: 1 },
-  recapQuestion: {
+  revealHeadText: { flex: 1 },
+  revealQuestion: {
     color: Colors.text,
     fontSize: fontScale(Typography.body),
     fontWeight: "700",
   },
-  recapAnswer: {
+  revealMeta: {
+    color: Colors.textMuted,
+    fontSize: fontScale(Typography.small),
+    fontWeight: "600",
+    marginTop: moderateScale(2),
+  },
+  sides: {
+    flexDirection: "row",
+    gap: moderateScale(10),
+    marginTop: moderateScale(14),
+  },
+  side: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: moderateScale(12),
+    paddingHorizontal: moderateScale(8),
+    borderRadius: moderateScale(16),
+    borderWidth: 2,
+    borderColor: "transparent",
+    backgroundColor: Colors.surfaceAlt,
+  },
+  sideWinner: {
+    borderColor: Colors.success,
+    backgroundColor: Colors.successBg,
+  },
+  miniLogo: {
+    backgroundColor: Colors.surface,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  miniFallback: {
+    color: Colors.textSecondary,
+    fontSize: fontScale(18),
+    fontWeight: "800",
+  },
+  sideName: {
+    marginTop: moderateScale(8),
+    textAlign: "center",
     color: Colors.textSecondary,
     fontSize: fontScale(Typography.small),
-    marginTop: moderateScale(2),
+    fontWeight: "600",
+    minHeight: fontScale(Typography.small) * 2.6,
+  },
+  sideValue: {
+    marginTop: moderateScale(4),
+    color: Colors.text,
+    fontSize: fontScale(Typography.bodyLarge),
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  sideValueWinner: { color: Colors.success },
+  tagRow: {
+    marginTop: moderateScale(8),
+    minHeight: moderateScale(40),
+    gap: moderateScale(4),
+    alignItems: "center",
+  },
+  tag: {
+    borderRadius: moderateScale(6),
+    paddingHorizontal: moderateScale(8),
+    paddingVertical: moderateScale(2),
+  },
+  tagWinner: { backgroundColor: Colors.success },
+  tagWinnerText: { color: "#fff", fontSize: fontScale(10), fontWeight: "800", letterSpacing: 0.6 },
+  tagPick: { backgroundColor: Colors.primaryLight },
+  tagPickText: { color: Colors.primaryDark, fontSize: fontScale(10), fontWeight: "800", letterSpacing: 0.6 },
+  viewBtn: {
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: moderateScale(6),
+    marginTop: moderateScale(12),
+    paddingVertical: moderateScale(6),
+    paddingHorizontal: moderateScale(12),
+  },
+  viewBtnText: {
+    color: Colors.primary,
+    fontSize: fontScale(Typography.body),
+    fontWeight: "700",
   },
   doneBtn: {
     alignSelf: "stretch",
