@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Ellipse, G, Path, Polygon } from "react-native-svg";
 
 import { QUIZ_COVER_COLOR } from "../components/RevealCover";
+import { markFaceOffIntroSeen } from "../utils/faceOffIntro";
 import { Colors, moderateScale } from "../theme";
 
 // The native animation driver doesn't exist on web; asking for it there only logs warnings.
@@ -267,7 +268,10 @@ function Ellipsis({ style, paused }) {
 }
 
 /**
- * DailyQuizIntroPage — full-screen "Daily Quiz" intro, opened from the Daily Quiz card.
+ * StockFaceOffIntroPage — full-screen intro for the Stock Face-off game.
+ *
+ * Shown ONLY the first time a person taps the Stock Face-off card (DailyChallengePage
+ * checks utils/faceOffIntro). Every later tap goes straight to the game.
  *
  * Theme-blue screen with big white copy that rises in row by row:
  *   "Learn, grow, [Win.]  Take the first step with us"
@@ -277,13 +281,14 @@ function Ellipsis({ style, paused }) {
  *
  * At the bottom a ring fills over LOAD_MS (2s) around a breathing dot, under the
  * message "We're making things ready for you". When the ring completes the dot
- * floods the whole screen (white -> QUIZ_COVER_COLOR) and the screen hands over to
- * the Daily Challenge page, which fades the same colour away slowly (RevealCover)
- * — so the illustration screen is gone and the page underneath is revealed.
+ * floods the whole screen (white -> QUIZ_COVER_COLOR), the intro is marked as seen,
+ * and this screen is REPLACED by the questions screen (StockOfTheDay), which fades
+ * the same colour away slowly (RevealCover). Back from the game therefore lands on
+ * the Daily Challenge page, never on this intro.
  *
  * Animations are shortened / paused when the device's "reduce motion" is on.
  */
-export default function DailyQuizIntroPage({ navigation }) {
+export default function StockFaceOffIntroPage({ navigation }) {
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReduceMotion();
@@ -338,21 +343,31 @@ export default function DailyQuizIntroPage({ navigation }) {
   const loaderOut = useRef(new Animated.Value(0)).current; // ring + message fade out
   const pulse = useLoop(900, 0, reduceMotion);
   const handedOver = useRef(false);
+  const alive = useRef(true);
 
   const goBack = () => {
+    handedOver.current = true; // closing wins over a hand-over that is about to fire
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate("MainTabs");
   };
 
-  const handOver = () => {
+  const handOver = async () => {
     if (handedOver.current) return;
     handedOver.current = true;
-    // Going to the existing Daily Challenge route pops this screen; the new param
-    // tells that page to play its slow reveal.
-    navigation.navigate("DailyChallenge", { revealAt: Date.now() });
+    // Remember first, so even if the next step fails the intro never replays.
+    await markFaceOffIntroSeen();
+    if (!alive.current) return; // closed while saving
+    // Replace (not push): back from the game goes to Daily Challenge, not here. The
+    // param tells the game screen to play its slow reveal.
+    navigation.replace("StockOfTheDay", { revealAt: Date.now() });
   };
 
   useEffect(() => {
+    alive.current = true;
+    // (re)start from zero, so the loader always runs the full LOAD_MS from here
+    progress.setValue(0);
+    expand.setValue(0);
+    loaderOut.setValue(0);
     // Everything that touches the loader's opacity is JS-driven (it is combined with
     // `expand`, which animates colour and so can't be native); only the dot's pulse is native.
     const fadeIn = Animated.timing(loaderIn, {
@@ -389,6 +404,7 @@ export default function DailyQuizIntroPage({ navigation }) {
       if (finished) handOver();
     });
     return () => {
+      alive.current = false;
       fadeIn.stop();
       run.stop();
     };

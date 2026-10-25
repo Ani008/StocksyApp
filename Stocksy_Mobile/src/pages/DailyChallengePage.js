@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,10 +7,10 @@ import SegmentedToggle from "../components/SegmentedToggle";
 import NiftyPredictionCard from "../components/NiftyPredictionCard";
 import DailyQuizCard from "../components/DailyQuizCard";
 import StockOfTheDayCard from "../components/StockOfTheDayCard";
-import RevealCover from "../components/RevealCover";
 import ChallengeFriendCard from "../components/ChallengeFriendCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
+import { hasSeenFaceOffIntro } from "../utils/faceOffIntro";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const TABS = [
@@ -36,7 +36,7 @@ const calcChange = (ltp, cp) => {
  *   - "Daily Challenge & Games" (default): the daily Nifty prediction card
  *   - "Streaks": the streak card + activity calendar (same as StreakPage)
  */
-const DailyChallengePage = ({ navigation, route }) => {
+const DailyChallengePage = ({ navigation }) => {
   const [tab, setTab] = useState("challenge");
 
   // Live Nifty 50, from the shared market socket (same key the Dashboard uses).
@@ -45,13 +45,27 @@ const DailyChallengePage = ({ navigation, route }) => {
   const niftyLtp = nifty?.ltp;
   const niftyChange = nifty ? calcChange(nifty.ltp, nifty.cp) : null;
 
+  // Stock Face-off: the animated intro plays only the first time someone taps the
+  // card; after that it goes straight to the game. The ref ignores a second tap
+  // while the (very quick) check is running.
+  const opening = useRef(false);
+  const openFaceOff = async () => {
+    if (opening.current) return;
+    opening.current = true;
+    try {
+      const seen = await hasSeenFaceOffIntro();
+      navigation.navigate(seen ? "StockOfTheDay" : "StockFaceOffIntro");
+    } finally {
+      opening.current = false;
+    }
+  };
+
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate("MainTabs");
   };
 
   return (
-    <>
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
 
@@ -89,8 +103,8 @@ const DailyChallengePage = ({ navigation, route }) => {
           <>
             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
             <View style={styles.widgetRow}>
-              <DailyQuizCard onPress={() => navigation.navigate("DailyQuiz")} />
-              <StockOfTheDayCard onPress={() => navigation.navigate("StockOfTheDay")} />
+              <DailyQuizCard />
+              <StockOfTheDayCard onPress={openFaceOff} />
             </View>
             <ChallengeFriendCard style={styles.challengeCard} />
           </>
@@ -99,11 +113,6 @@ const DailyChallengePage = ({ navigation, route }) => {
         )}
       </ScrollView>
     </SafeAreaView>
-
-    {/* Plays when the Daily Quiz intro hands over: the colour it flooded the screen
-        with fades away slowly, revealing this page. */}
-    <RevealCover trigger={route?.params?.revealAt} />
-    </>
   );
 };
 

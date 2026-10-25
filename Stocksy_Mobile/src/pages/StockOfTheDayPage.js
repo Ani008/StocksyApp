@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { INSTRUMENTS } from "./SearchPage";
 import useStockOfTheDay from "../hooks/useStockOfTheDay";
+import RevealCover from "../components/RevealCover";
 import {
   answersText,
   formatValue,
@@ -356,7 +357,7 @@ function ResultView({ result, sector, navigation, onDone }) {
  * round is one question about two companies in that sector: tap the logo you
  * think wins. After the last round you see your score, "3 out of 5".
  */
-const StockOfTheDayPage = ({ navigation }) => {
+const StockOfTheDayPage = ({ navigation, route }) => {
   const { state, loading, failed, submitting, reload, answer } = useStockOfTheDay();
 
   const goBack = () => {
@@ -421,6 +422,7 @@ const StockOfTheDayPage = ({ navigation }) => {
   }
 
   return (
+    <>
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
 
@@ -440,6 +442,11 @@ const StockOfTheDayPage = ({ navigation }) => {
 
       {content}
     </SafeAreaView>
+
+    {/* Only after the first-time intro: the colour it flooded the screen with fades
+        away slowly, revealing the game. Opened any other way there is no param. */}
+    <RevealCover trigger={route?.params?.revealAt} />
+    </>
   );
 };
 
