@@ -25,8 +25,8 @@ const YELLOW_DEEP = "#FDE68A";
  *   style     object    — merged onto the outer card container
  */
 export default function StockOfTheDayCard({
-  title = "Stock of\nthe Day",
-  subtitle = "TATAMOTORS",
+  title = "Stock\nFace-off",
+  subtitle = "",
   onPress,
   style,
 }) {
