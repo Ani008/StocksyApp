@@ -1,8 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
-  Animated,
-  Image,
   StatusBar,
   StyleSheet,
   Text,
@@ -15,145 +13,9 @@ import { Ionicons } from "@expo/vector-icons";
 import useStockOfTheDay from "../hooks/useStockOfTheDay";
 import RevealCover from "../components/RevealCover";
 import StockFaceOffResult from "../components/StockFaceOffResult";
-import { DOMAIN_BY_KEY, logoUri } from "../utils/stockLogo";
+import StockFaceOffQuestion, { QUESTION_BG } from "../components/StockFaceOffQuestion";
 import { markFaceOffIntroSeen } from "../utils/faceOffIntro";
-import { Colors, Shadows, Typography, fontScale, moderateScale } from "../theme";
-
-/**
- * One big tappable company logo. If the logo can't load (or we have no domain
- * for it) the ticker's first letters are shown instead, so a round is never
- * unplayable.
- */
-function LogoButton({ stock, selected, dimmed, disabled, onPress, size }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const domain = DOMAIN_BY_KEY.get(stock.key);
-  const [failed, setFailed] = useState(false);
-
-  const pressTo = (to) =>
-    Animated.spring(scale, { toValue: to, useNativeDriver: true, speed: 30, bounciness: 8 }).start();
-
-  return (
-    <Animated.View style={{ transform: [{ scale }], opacity: dimmed ? 0.45 : 1 }}>
-      <TouchableOpacity
-        activeOpacity={1}
-        disabled={disabled}
-        onPress={onPress}
-        onPressIn={() => pressTo(0.94)}
-        onPressOut={() => pressTo(1)}
-        accessibilityRole="button"
-        accessibilityLabel={`Pick ${stock.name}`}
-        accessibilityState={{ selected, disabled }}
-        style={[
-          styles.logoCard,
-          { width: size, height: size },
-          selected && styles.logoCardSelected,
-        ]}
-      >
-        {failed || !domain ? (
-          <Text style={styles.fallback}>{stock.symbol.slice(0, 2).toUpperCase()}</Text>
-        ) : (
-          <Image
-            source={{ uri: logoUri(domain) }}
-            style={{ width: size * 0.62, height: size * 0.62 }}
-            resizeMode="contain"
-            onError={() => setFailed(true)}
-          />
-        )}
-        {selected && (
-          <View style={styles.tick}>
-            <Ionicons name="checkmark" size={moderateScale(14)} color="#fff" />
-          </View>
-        )}
-      </TouchableOpacity>
-      <Text style={styles.stockName} numberOfLines={2}>
-        {stock.name}
-      </Text>
-    </Animated.View>
-  );
-}
-
-/** One dot per round: filled = answered, ring = the one being played. */
-function ProgressDots({ total, answered }) {
-  return (
-    <View style={styles.dots} accessibilityLabel={`Round ${Math.min(answered + 1, total)} of ${total}`}>
-      {Array.from({ length: total }, (_, i) => (
-        <View
-          key={i}
-          style={[
-            styles.dot,
-            i < answered && styles.dotDone,
-            i === answered && styles.dotCurrent,
-          ]}
-        />
-      ))}
-    </View>
-  );
-}
-
-/** The round being played: the question, two logos, tap one to lock it in. */
-function RoundView({ round, total, answered, sector, submitting, onPick }) {
-  const [rowWidth, setRowWidth] = useState(0);
-  const [pending, setPending] = useState(null); // the key just tapped, while it is being locked in
-
-  const gap = moderateScale(20);
-  const size = rowWidth > 0 ? Math.floor((rowWidth - gap) / 2) : 0;
-
-  const pick = async (key) => {
-    if (submitting || pending) return;
-    setPending(key);
-    const ok = await onPick(round.index, key);
-    if (!ok) setPending(null); // the round stays open, so let them try again
-  };
-
-  return (
-    <View style={styles.body}>
-      <View style={styles.chipRow}>
-        <View style={styles.chip}>
-          <Text style={styles.chipText}>{sector.toUpperCase()}</Text>
-        </View>
-        <Text style={styles.round}>
-          Round {answered + 1} of {total}
-        </Text>
-      </View>
-
-      <ProgressDots total={total} answered={answered} />
-
-      <Text style={styles.question} accessibilityRole="header">
-        {round.text}
-      </Text>
-
-      <View style={styles.row} onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}>
-        {size > 0 && (
-          <>
-            <LogoButton
-              stock={round.left}
-              size={size}
-              selected={pending === round.left.key}
-              dimmed={pending === round.right.key}
-              disabled={!!pending}
-              onPress={() => pick(round.left.key)}
-            />
-            <LogoButton
-              stock={round.right}
-              size={size}
-              selected={pending === round.right.key}
-              dimmed={pending === round.left.key}
-              disabled={!!pending}
-              onPress={() => pick(round.right.key)}
-            />
-            <View pointerEvents="none" style={[styles.vsWrap, { top: size / 2 - moderateScale(20) }]}>
-              <View style={styles.vs}>
-                <Text style={styles.vsText}>VS</Text>
-              </View>
-            </View>
-          </>
-        )}
-      </View>
-
-      <Text style={styles.hint}>Tap the logo you think wins. Your pick locks in.</Text>
-    </View>
-  );
-}
+import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 /**
  * Stock of the Day.
@@ -211,8 +73,9 @@ const StockOfTheDayPage = ({ navigation, route }) => {
       />;
   } else if (current) {
     content = (
-      <RoundView
-        // A fresh view per round resets the highlight and the press animation.
+      <StockFaceOffQuestion
+        onBack={goBack}
+        // A fresh view per round replays the entrance and resets the highlight.
         key={`${state.date}-${current.index}`}
         round={current}
         total={state.total}
@@ -231,6 +94,18 @@ const StockOfTheDayPage = ({ navigation, route }) => {
           <Text style={styles.retryText}>Show my result</Text>
         </TouchableOpacity>
       </View>
+    );
+  }
+
+  // The question screen is its own full-bleed design (cobalt frame, its own back
+  // button), so it skips the standard header and safe-area wrapper.
+  if (current && state && !state.complete) {
+    return (
+      <>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={{ flex: 1, backgroundColor: QUESTION_BG }}>{content}</View>
+        <RevealCover trigger={route?.params?.revealAt} />
+      </>
     );
   }
 
@@ -289,129 +164,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: moderateScale(32),
-  },
-  body: {
-    flex: 1,
-    paddingHorizontal: moderateScale(20),
-    paddingTop: moderateScale(8),
-  },
-  chipRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  chip: {
-    alignSelf: "flex-start",
-    backgroundColor: "#FEF3C7",
-    borderRadius: moderateScale(8),
-    paddingHorizontal: moderateScale(10),
-    paddingVertical: moderateScale(4),
-  },
-  chipText: {
-    color: "#92400E",
-    fontSize: fontScale(11),
-    fontWeight: "800",
-    letterSpacing: 0.8,
-  },
-  round: {
-    color: Colors.textSecondary,
-    fontSize: fontScale(Typography.small),
-    fontWeight: "600",
-  },
-  dots: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: moderateScale(8),
-    marginTop: moderateScale(18),
-  },
-  dot: {
-    width: moderateScale(10),
-    height: moderateScale(10),
-    borderRadius: moderateScale(5),
-    backgroundColor: Colors.border,
-  },
-  dotDone: { backgroundColor: Colors.primary },
-  dotCurrent: {
-    backgroundColor: Colors.surface,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
-  question: {
-    color: Colors.text,
-    fontSize: fontScale(24),
-    lineHeight: fontScale(30),
-    fontWeight: "800",
-    letterSpacing: -0.4,
-    textAlign: "center",
-    marginTop: moderateScale(24),
-    marginBottom: moderateScale(28),
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  logoCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: moderateScale(28),
-    borderWidth: 2,
-    borderColor: "transparent",
-    justifyContent: "center",
-    alignItems: "center",
-    ...Shadows.card,
-  },
-  logoCardSelected: {
-    borderColor: Colors.primary,
-  },
-  fallback: {
-    color: Colors.textSecondary,
-    fontSize: fontScale(40),
-    fontWeight: "800",
-  },
-  tick: {
-    position: "absolute",
-    top: moderateScale(10),
-    right: moderateScale(10),
-    width: moderateScale(24),
-    height: moderateScale(24),
-    borderRadius: moderateScale(12),
-    backgroundColor: Colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  stockName: {
-    marginTop: moderateScale(10),
-    textAlign: "center",
-    color: Colors.textSecondary,
-    fontSize: fontScale(Typography.small),
-    fontWeight: "600",
-  },
-  vsWrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  vs: {
-    width: moderateScale(40),
-    height: moderateScale(40),
-    borderRadius: moderateScale(20),
-    backgroundColor: Colors.text,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 3,
-    borderColor: Colors.background,
-  },
-  vsText: {
-    color: "#fff",
-    fontSize: fontScale(12),
-    fontWeight: "900",
-    letterSpacing: 0.5,
-  },
-  hint: {
-    textAlign: "center",
-    color: Colors.textMuted,
-    fontSize: fontScale(Typography.small),
-    marginTop: moderateScale(28),
   },
   emptyTitle: {
     color: Colors.text,
