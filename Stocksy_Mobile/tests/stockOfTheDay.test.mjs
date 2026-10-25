@@ -49,6 +49,12 @@ test("ratio: one decimal, none for triple digits", () => {
   assert.equal(formatValue("x", 120), "120x");
 });
 
+test("year: a founding year has no commas or decimals", () => {
+  assert.equal(formatValue("year", 1968), "1968");
+  assert.equal(formatValue("year", 2015), "2015");
+  assert.equal(formatValue("year", NaN), "N/A");
+});
+
 test("bad numbers are N/A, never NaN or undefined", () => {
   for (const bad of [NaN, Infinity, undefined, null, "12", {}]) {
     assert.equal(formatValue("pct", bad), "N/A");

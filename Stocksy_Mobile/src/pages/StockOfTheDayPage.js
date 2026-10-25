@@ -189,7 +189,7 @@ function MiniLogo({ stock, size }) {
 }
 
 /** One side of a result card: logo, name, the number compared, and who won / who you picked. */
-function SideColumn({ stock, valueText, isWinner, isPicked }) {
+function SideColumn({ stock, valueText, isWinner, isPicked, winnerTag }) {
   return (
     <View style={[styles.side, isWinner && styles.sideWinner]}>
       <MiniLogo stock={stock} size={moderateScale(56)} />
@@ -200,7 +200,7 @@ function SideColumn({ stock, valueText, isWinner, isPicked }) {
       <View style={styles.tagRow}>
         {isWinner && (
           <View style={[styles.tag, styles.tagWinner]}>
-            <Text style={styles.tagWinnerText}>HIGHER</Text>
+            <Text style={styles.tagWinnerText}>{winnerTag || "HIGHER"}</Text>
           </View>
         )}
         {isPicked && (
@@ -251,12 +251,14 @@ function RevealCard({ round, anim, onViewStock }) {
           valueText={fmt(round.leftValue)}
           isWinner={winner === "left"}
           isPicked={picked === "left"}
+          winnerTag={round.winnerTag}
         />
         <SideColumn
           stock={round.right}
           valueText={fmt(round.rightValue)}
           isWinner={winner === "right"}
           isPicked={picked === "right"}
+          winnerTag={round.winnerTag}
         />
       </View>
 

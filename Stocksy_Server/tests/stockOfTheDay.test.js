@@ -11,26 +11,30 @@ const DAY = '2026-10-23';
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 // A stock's fundamentals the way the snapshot has them.
-const fund = ({ mcap, pe, pb, yearly }) => ({
+const fund = ({ mcap, pe, pb, yearly, founded, symbol }) => ({
   metrics: { market_cap: mcap, pe_ratio: pe, pb_ratio: pb },
   financials: {
     yearly: (yearly || []).map(([period, revenue, profit]) => ({ period: String(period), revenue, profit })),
   },
+  ...(founded !== undefined ? { profile: { founded, nse_symbol: symbol } } : {}),
 });
 
 // Four stocks whose numbers differ a lot on every measure, so every question
-// is valid for every pair.
+// is valid for every pair. The bigger company is also the older one, so in every
+// pair one company wins every question.
 const SPREAD = {
-  AAA: fund({ mcap: 1000, pe: 10, pb: 1, yearly: [[2024, 100, 5], [2025, 110, 5.5]] }), // margin 5%,  rev +10%, profit +10%
-  BBB: fund({ mcap: 2000, pe: 20, pb: 2, yearly: [[2024, 200, 20], [2025, 240, 26]] }), // margin ~11%, rev +20%, profit +30%
-  CCC: fund({ mcap: 4000, pe: 40, pb: 4, yearly: [[2024, 400, 60], [2025, 560, 100]] }), // margin ~18%, rev +40%, profit +67%
-  DDD: fund({ mcap: 8000, pe: 80, pb: 8, yearly: [[2024, 800, 160], [2025, 1440, 420]] }), // margin ~29%, rev +80%, profit +163%
+  AAA: fund({ founded: 1990, symbol: 'AAA', mcap: 1000, pe: 10, pb: 1, yearly: [[2024, 100, 5], [2025, 110, 5.5]] }), // margin 5%,  rev +10%, profit +10%
+  BBB: fund({ founded: 1960, symbol: 'BBB', mcap: 2000, pe: 20, pb: 2, yearly: [[2024, 200, 20], [2025, 240, 26]] }), // margin ~11%, rev +20%, profit +30%
+  CCC: fund({ founded: 1930, symbol: 'CCC', mcap: 4000, pe: 40, pb: 4, yearly: [[2024, 400, 60], [2025, 560, 100]] }), // margin ~18%, rev +40%, profit +67%
+  DDD: fund({ founded: 1900, symbol: 'DDD', mcap: 8000, pe: 80, pb: 8, yearly: [[2024, 800, 160], [2025, 1440, 420]] }), // margin ~29%, rev +80%, profit +163%
 };
 const snapshotOf = (stocks) => ({ stocks });
 const instrumentsOf = (symbols, sector = 'Test') =>
   Object.fromEntries(symbols.map((s) => [`NSE_EQ|${s}`, { symbol: s, name: `${s} Ltd`, sector }]));
 const ctx = { sector: 'Test', currentYear: 2026 };
-const q = (id) => L.QUESTION_BY_ID[id];
+// Includes the parked questions: their rules stay tested so they are safe to switch back on.
+const ALL_QUESTIONS = [...L.QUESTIONS, ...L.DISABLED_QUESTIONS];
+const q = (id) => ALL_QUESTIONS.find((x) => x.id === id);
 
 // ── seeded random ───────────────────────────────────────────────────────────
 test('seededRandom: same seed same stream, different seed differs', () => {
@@ -42,9 +46,10 @@ test('seededRandom: same seed same stream, different seed differs', () => {
 });
 
 // ── the question set ────────────────────────────────────────────────────────
-test('questions: dividend and debt are switched off, the reliable six are on', () => {
-  assert.deepEqual(L.QUESTIONS.map((x) => x.id).sort(), ['margin', 'pb', 'pe', 'profit_growth', 'revenue_growth', 'valuation']);
-  assert.deepEqual(L.DISABLED_QUESTIONS.map((x) => x.id).sort(), ['debt', 'dividend']);
+test('questions: the five chosen are on, the rest are parked', () => {
+  assert.deepEqual(L.QUESTIONS.map((x) => x.id).sort(), ['age', 'margin', 'profit', 'revenue_growth', 'valuation']);
+  assert.deepEqual(L.DISABLED_QUESTIONS.map((x) => x.id).sort(), ['debt', 'dividend', 'pb', 'pe', 'profit_growth']);
+  assert.equal(L.QUESTIONS.length, L.ROUNDS_PER_DAY);
 });
 
 test('questions: wording is neutral, never "who is better"', () => {
@@ -141,6 +146,55 @@ test('growth: "who grew faster" is not asked when both shrank', () => {
   assert.notEqual(L.judge(q('profit_growth'), a, grew, ctx), null);
 });
 
+// ── the profit question ─────────────────────────────────────────────────────
+test('profit: the bigger yearly profit wins, same fiscal year only', () => {
+  const a = fund({ yearly: [[2024, 100, 10], [2025, 110, 12]] });
+  const b = fund({ yearly: [[2024, 100, 30], [2025, 120, 40]] });
+  const j = L.judge(q('profit'), a, b, ctx);
+  assert.equal(j.winnerSide, 'right');
+  assert.equal(j.leftValue, 12);
+  assert.equal(j.rightValue, 40);
+  assert.equal(j.year, 2025);
+  const lagging = fund({ yearly: [[2023, 100, 30], [2024, 120, 40]] });
+  assert.equal(L.judge(q('profit'), a, lagging, ctx), null); // different latest years
+});
+
+test('profit: a loss-maker is left out ("who makes more profit" needs both to make some)', () => {
+  const profitable = fund({ yearly: [[2024, 100, 10], [2025, 110, 12]] });
+  const losing = fund({ yearly: [[2024, 100, -5], [2025, 110, -2]] });
+  assert.equal(L.judge(q('profit'), profitable, losing, ctx), null);
+});
+
+// ── the "older" question ────────────────────────────────────────────────────
+const aged = (founded, symbol = 'XXX') => fund({ founded, symbol });
+
+test('age: the OLDER company wins, and the years shown are the founding years', () => {
+  const j = L.judge(q('age'), aged(1981), aged(1945), ctx);
+  assert.equal(j.winnerSide, 'right');   // 1945 is older
+  assert.equal(j.leftValue, 1981);       // shown as the year, not the age
+  assert.equal(j.rightValue, 1945);
+  assert.equal(L.judge(q('age'), aged(1945), aged(1981), ctx).winnerSide, 'left');
+  assert.equal(q('age').winnerTag, 'OLDER');
+});
+
+test('age: founded within 5 years of each other is not asked, nor is a same-year tie', () => {
+  assert.equal(L.judge(q('age'), aged(1981), aged(1984), ctx), null);
+  assert.equal(L.judge(q('age'), aged(1994), aged(1994), ctx), null); // HDFC Bank / ICICI Bank
+  assert.notEqual(L.judge(q('age'), aged(1981), aged(1975), ctx), null);
+});
+
+test('age: missing, silly or doubtful founding years are never used', () => {
+  assert.equal(L.judge(q('age'), aged(1981), fund({}), ctx), null);               // no profile
+  assert.equal(L.judge(q('age'), aged(1981), aged(null), ctx), null);
+  assert.equal(L.judge(q('age'), aged(1981), aged('abc'), ctx), null);
+  assert.equal(L.judge(q('age'), aged(1981), aged(1500), ctx), null);             // before 1800
+  assert.equal(L.judge(q('age'), aged(1981), aged(2031), ctx), null);             // in the future
+  assert.equal(L.judge(q('age'), aged(1981), aged(1950.5), ctx), null);           // not a whole year
+  for (const sym of ['SBIN', 'HINDUNILVR', 'DABUR', 'BPCL']) {
+    assert.equal(L.judge(q('age'), aged(1900, sym), aged(1990), ctx), null, `${sym} should be excluded`);
+  }
+});
+
 // ── grouping ────────────────────────────────────────────────────────────────
 test('groupBySector: equities only, sectors need at least 4 stocks', () => {
   const inst = {
@@ -167,11 +221,12 @@ test('buildDay: a full day of 5 rounds with the right shape', () => {
   });
 });
 
-test('buildDay: the winner of every round really has the bigger number', () => {
+test('buildDay: the winner of every round really has the bigger number (older = earlier year)', () => {
   for (const r of build().rounds) {
     const winnerValue = r.winnerKey === r.left.key ? r.leftValue : r.rightValue;
     const loserValue = r.winnerKey === r.left.key ? r.rightValue : r.leftValue;
-    assert.ok(winnerValue > loserValue, r.questionId);
+    if (r.unit === 'year') assert.ok(winnerValue < loserValue, 'older company must have the earlier founding year');
+    else assert.ok(winnerValue > loserValue, r.questionId);
   }
 });
 
@@ -200,8 +255,8 @@ test('buildDay: no question twice, no theme more than twice', () => {
 // Two pairs: AAA/BBB is a clean sweep (BBB bigger on everything), CCC/DDD is mixed
 // (each wins some). Names are chosen so we can tell which pair the day used.
 const MIXED = {
-  CCC: fund({ mcap: 1000, pe: 10, pb: 4, yearly: [[2024, 100, 5], [2025, 110, 5.5]] }),
-  DDD: fund({ mcap: 2000, pe: 30, pb: 1, yearly: [[2024, 200, 40], [2025, 240, 60]] }),
+  CCC: fund({ founded: 1950, symbol: 'CCC', mcap: 1000, pe: 10, pb: 4, yearly: [[2024, 100, 5], [2025, 110, 5.5]] }), // older, wins only that one
+  DDD: fund({ founded: 1990, symbol: 'DDD', mcap: 2000, pe: 30, pb: 1, yearly: [[2024, 200, 40], [2025, 240, 60]] }),
 };
 const pairOf = (day) => [day.rounds[0].left.symbol, day.rounds[0].right.symbol].sort().join('~');
 
@@ -254,14 +309,19 @@ test('buildDay: no data, no day', () => {
 });
 
 test('buildDay: thin data gives a shorter day, but never fewer than 3 rounds', () => {
-  // Only market cap exists -> only the "valuation" question can be asked.
-  const onlyMcap = Object.fromEntries(Object.entries(SPREAD).map(([k, v]) => [k, { metrics: { market_cap: v.metrics.market_cap }, financials: {} }]));
+  const strip = (keep) => Object.fromEntries(Object.entries(SPREAD).map(([k, v]) => [k, keep(v)]));
+
+  // Only market cap exists -> only "valuation" can be asked -> no day.
+  const onlyMcap = strip((v) => ({ metrics: { market_cap: v.metrics.market_cap }, financials: {} }));
   assert.equal(build(DAY, snapshotOf(onlyMcap)), null);
 
-  // Market cap + P/E + P/B -> 3 questions -> a 3-round day.
-  const three = Object.fromEntries(Object.entries(SPREAD).map(([k, v]) => [k, { metrics: v.metrics, financials: {} }]));
-  const day = build(DAY, snapshotOf(three));
-  assert.equal(day.rounds.length, 3);
+  // No founding years -> 4 questions (value, profit, margin, growth) -> a 4-round day.
+  const noAge = strip((v) => ({ metrics: v.metrics, financials: v.financials }));
+  assert.equal(build(DAY, snapshotOf(noAge)).rounds.length, 4);
+
+  // One year of results only -> value, profit, margin -> a 3-round day.
+  const oneYear = strip((v) => ({ metrics: v.metrics, financials: { yearly: v.financials.yearly.slice(-1) } }));
+  assert.equal(build(DAY, snapshotOf(oneYear)).rounds.length, 3);
 });
 
 test('buildDay: a stock with no fundamentals is simply never asked about', () => {
@@ -292,8 +352,17 @@ test('real data: every day for 90 days is a full, internally consistent day', { 
       assert.equal(sectorOf(r.left.key), day.sector);
       assert.equal(sectorOf(r.right.key), day.sector);
       const hi = Math.max(r.leftValue, r.rightValue), lo = Math.min(r.leftValue, r.rightValue);
-      assert.equal(r.winnerKey, r.leftValue > r.rightValue ? r.left.key : r.right.key);
-      assert.ok((hi - lo) / Math.max(Math.abs(hi), Math.abs(lo)) >= L.MIN_RELATIVE_GAP, `near-tie on ${dateKey}`);
+      if (r.unit === 'year') {
+        // "Older" = the earlier founding year, by at least 5 years, and never a doubtful founding date.
+        assert.equal(r.winnerKey, r.leftValue < r.rightValue ? r.left.key : r.right.key);
+        assert.ok(hi - lo >= 5, `founded within 5 years on ${dateKey}`);
+        assert.ok(![r.left.symbol, r.right.symbol].some((x) => ['SBIN', 'HINDUNILVR', 'DABUR', 'BPCL'].includes(x)), 'doubtful founding year used');
+        assert.equal(r.winnerTag, 'OLDER');
+      } else {
+        assert.equal(r.winnerKey, r.leftValue > r.rightValue ? r.left.key : r.right.key);
+        assert.ok((hi - lo) / Math.max(Math.abs(hi), Math.abs(lo)) >= L.MIN_RELATIVE_GAP, `near-tie on ${dateKey}`);
+        assert.equal(r.winnerTag, 'HIGHER');
+      }
       if (r.unit === 'pct') assert.ok(Math.abs(r.leftValue) <= 300 && Math.abs(r.rightValue) <= 300);
     }
   }
@@ -308,7 +377,7 @@ test('viewDay: no winners or numbers until every round is answered', () => {
   assert.equal(view.answered, 2);
   assert.equal(view.result, null);
   const text = JSON.stringify(view);
-  assert.doesNotMatch(text, /winnerKey|leftValue|rightValue|fiscalYear/);
+  assert.doesNotMatch(text, /winnerKey|winnerTag|leftValue|rightValue|fiscalYear/);
   assert.equal(view.rounds[0].pickedKey, day.rounds[0].left.key);
   assert.equal(view.rounds[2].pickedKey, null);
 });

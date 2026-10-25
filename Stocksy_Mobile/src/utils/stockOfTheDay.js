@@ -22,6 +22,7 @@ export function groupIndian(n) {
  *                  "₹5.16 lakh Cr" from one lakh crore up
  *   unit "pct"     -> "31.3%"   (pass signed: true for growth -> "+10.2%")
  *   unit "x"       -> "37.3x"
+ *   unit "year"    -> "1968"    (a founding year: no commas, no decimals)
  * Anything that is not a finite number is "N/A" (never "NaN").
  */
 export function formatValue(unit, value, { signed = false } = {}) {
@@ -39,6 +40,7 @@ export function formatValue(unit, value, { signed = false } = {}) {
     return `${sign}${text}%`;
   }
   if (unit === "x") return `${value.toFixed(value >= 100 ? 0 : 1)}x`;
+  if (unit === "year") return String(Math.round(value));
   return String(value);
 }
 

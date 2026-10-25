@@ -32,7 +32,11 @@
  *  5. Only fields that have been checked against each other are used. Dividend
  *     yield and debt-to-equity are switched off (see DISABLED_QUESTIONS): the
  *     fundamentals feed mixes units in them, and a confidently wrong answer is
- *     worse than no question.
+ *     worse than no question. P/E, P/B and profit growth are parked there too,
+ *     as harder for a beginner than the five questions that are on.
+ *  6. "Which company is older" compares founding years. A few years in the feed
+ *     are rebrand or merger dates rather than a real start, so those companies
+ *     are never asked this question (FOUNDED_UNRELIABLE).
  *
  * Everything is seeded by the IST date, so every user gets the same day.
  */
@@ -57,6 +61,15 @@ const MAX_STALE_YEARS = 2;
 // A winner must lead by at least this fraction of the larger value, AND by the
 // question's own minimum absolute gap. Keeps near-ties out of the game.
 const MIN_RELATIVE_GAP = 0.1;
+
+// Companies whose `founded` year in the feed is not their real start (a rebrand,
+// a merger or a nationalisation date), so "which is older" could be argued:
+//   SBIN 1955 (State Bank of India Act; the bank dates from 1806)
+//   HINDUNILVR 1993 (the company dates from 1933)
+//   DABUR 1975 (incorporation; the business dates from 1884)
+//   BPCL 1987 (the company was formed in the 1950s-70s)
+// Add a symbol here if its founding year turns out to be wrong.
+const FOUNDED_UNRELIABLE = new Set(["SBIN", "HINDUNILVR", "DABUR", "BPCL"]);
 
 const FINANCIAL_SECTORS = new Set(["Banking", "Finance", "Insurance", "Financial Services"]);
 
@@ -137,11 +150,13 @@ const pctChange = (cur, prev) => ((cur - prev) / prev) * 100;
 
 // ── The question set ─────────────────────────────────────────────────────────
 //
-// extract(fundamentals, ctx) -> { value, year? } | null
+// extract(fundamentals, ctx) -> { value, year?, shown? } | null
 //   ctx = { sector, currentYear }
-// `year` is set for fiscal-year numbers; two stocks are only compared when
-// their years match.
-// minAbsGap is in the same units as the value.
+// The bigger `value` wins. `year` is set for fiscal-year numbers; two stocks are
+// only compared when their years match. `shown` is what the user is shown if it
+// differs from `value` (for "older", the value is the age but we show the year).
+// minAbsGap is in the same units as `value`.
+// winnerTag is the badge on the winner's card (defaults to HIGHER).
 
 const QUESTIONS = Object.freeze([
   {
@@ -157,27 +172,17 @@ const QUESTIONS = Object.freeze([
     },
   },
   {
-    id: "pe",
-    theme: "price",
-    text: "Whose shares cost more for every ₹1 of profit (higher P/E)?",
-    label: "P/E ratio",
-    unit: "x",
-    minAbsGap: 1.5,
-    extract: (f) => {
-      const v = num(f && f.metrics && f.metrics.pe_ratio);
-      return v !== null && v > 0 && v < 1000 ? { value: v } : null;
-    },
-  },
-  {
-    id: "pb",
-    theme: "price",
-    text: "Who trades at a higher price compared to its book value (P/B)?",
-    label: "P/B ratio",
-    unit: "x",
-    minAbsGap: 0.3,
-    extract: (f) => {
-      const v = num(f && f.metrics && f.metrics.pb_ratio);
-      return v !== null && v > 0 && v < 200 ? { value: v } : null;
+    id: "profit",
+    theme: "size",
+    text: "Who makes more profit in a year?",
+    label: "Yearly profit",
+    unit: "inr_cr",
+    minAbsGap: 0,
+    yearly: true,
+    extract: (f, ctx) => {
+      const y = latestYear(f, ctx.currentYear);
+      // A loss-maker is left out: "who makes more profit" needs both to make some.
+      return y && y.profit > 0 ? { value: y.profit, year: y.year } : null;
     },
   },
   {
@@ -213,6 +218,61 @@ const QUESTIONS = Object.freeze([
     },
   },
   {
+    id: "age",
+    theme: "age",
+    text: "Which company is older?",
+    label: "Founded",
+    unit: "year",
+    winnerTag: "OLDER",
+    minAbsGap: 5, // years of age
+    extract: (f, ctx) => {
+      const founded = num(f && f.profile && f.profile.founded);
+      if (founded === null || !Number.isInteger(founded)) return null;
+      if (founded < 1800 || founded > ctx.currentYear) return null;
+      // Some founding years in the feed are rebrand / merger dates, not the real
+      // start of the company, so "older" could be argued. Left out of this question.
+      if (FOUNDED_UNRELIABLE.has(f.profile.nse_symbol)) return null;
+      // The OLDER company is the one with the bigger age. What is shown to the
+      // user is the founding year itself.
+      return { value: ctx.currentYear - founded, shown: founded };
+    },
+  },
+]);
+
+// Switched OFF on purpose. Kept here, fully written, so turning one back on is
+// just moving it into QUESTIONS.
+//   pe, pb, profit_growth: parked because they are harder for a beginner to grasp
+//             than the five in QUESTIONS. The data behind them is fine.
+//   dividend: the feed's dividend_yield mixes percentages with what look like
+//             rupees per share (Cipla 94, ICICI Bank 92, Nestle 89, Siemens 48).
+//   debt:     debt_to_equity looks mis-scaled for some companies (Infosys 9.5,
+//             HCL 7.1 next to Maruti 0.10), so "who has more debt" could be wrong.
+const DISABLED_QUESTIONS = Object.freeze([
+  {
+    id: "pe",
+    theme: "price",
+    text: "Whose shares cost more for every ₹1 of profit (higher P/E)?",
+    label: "P/E ratio",
+    unit: "x",
+    minAbsGap: 1.5,
+    extract: (f) => {
+      const v = num(f && f.metrics && f.metrics.pe_ratio);
+      return v !== null && v > 0 && v < 1000 ? { value: v } : null;
+    },
+  },
+  {
+    id: "pb",
+    theme: "price",
+    text: "Who trades at a higher price compared to its book value (P/B)?",
+    label: "P/B ratio",
+    unit: "x",
+    minAbsGap: 0.3,
+    extract: (f) => {
+      const v = num(f && f.metrics && f.metrics.pb_ratio);
+      return v !== null && v > 0 && v < 200 ? { value: v } : null;
+    },
+  },
+  {
     id: "profit_growth",
     theme: "growth",
     text: "Who grew its profit faster last year?",
@@ -229,15 +289,6 @@ const QUESTIONS = Object.freeze([
       return Math.abs(g) <= 300 ? { value: g, year: two.cur.year } : null;
     },
   },
-]);
-
-// Switched OFF on purpose. Kept here, fully written, so turning one back on is
-// moving it into QUESTIONS once the data behind it is fixed.
-//   dividend: the feed's dividend_yield mixes percentages with what look like
-//             rupees per share (Cipla 94, ICICI Bank 92, Nestle 89, Siemens 48).
-//   debt:     debt_to_equity looks mis-scaled for some companies (Infosys 9.5,
-//             HCL 7.1 next to Maruti 0.10), so "who has more debt" could be wrong.
-const DISABLED_QUESTIONS = Object.freeze([
   {
     id: "dividend",
     theme: "income",
@@ -288,8 +339,8 @@ function judge(question, leftF, rightF, ctx) {
   if (!(biggest > 0) || gap / biggest < MIN_RELATIVE_GAP) return null;
 
   return {
-    leftValue: l.value,
-    rightValue: r.value,
+    leftValue: l.shown !== undefined ? l.shown : l.value,
+    rightValue: r.shown !== undefined ? r.shown : r.value,
     winnerSide: l.value > r.value ? "left" : "right",
     year: l.year || null,
   };
@@ -419,6 +470,7 @@ function buildSectorRounds({ sector, stocks, fundamentals, dateKey }) {
     text: q.text,
     label: q.label,
     unit: q.unit,
+    winnerTag: q.winnerTag || "HIGHER",
     fiscalYear: j.year,
     left: { key: best.left.key, symbol: best.left.symbol, name: best.left.name },
     right: { key: best.right.key, symbol: best.right.symbol, name: best.right.name },
@@ -486,6 +538,7 @@ function viewDay(day, answers) {
       text: r.text,
       label: r.label,
       unit: r.unit,
+      winnerTag: r.winnerTag || "HIGHER",
       fiscalYear: r.fiscalYear,
       left: r.left,
       right: r.right,
