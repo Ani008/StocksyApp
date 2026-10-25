@@ -175,7 +175,18 @@ test('buildDay: the winner of every round really has the bigger number', () => {
   }
 });
 
-test('buildDay: no question twice, no theme more than twice, no pair twice', () => {
+test('buildDay: ONE pair, on the same sides, for every round of the day', () => {
+  for (let d = 1; d <= 30; d++) {
+    const day = build(`2026-11-${String(d).padStart(2, '0')}`);
+    const first = day.rounds[0];
+    for (const r of day.rounds) {
+      assert.equal(r.left.key, first.left.key, 'left logo changed mid-game');
+      assert.equal(r.right.key, first.right.key, 'right logo changed mid-game');
+    }
+  }
+});
+
+test('buildDay: no question twice, no theme more than twice', () => {
   for (let d = 1; d <= 30; d++) {
     const day = build(`2026-11-${String(d).padStart(2, '0')}`);
     const ids = day.rounds.map((r) => r.questionId);
@@ -183,20 +194,39 @@ test('buildDay: no question twice, no theme more than twice, no pair twice', () 
     const themes = {};
     day.rounds.forEach((r) => { themes[r.theme] = (themes[r.theme] || 0) + 1; });
     assert.ok(Math.max(...Object.values(themes)) <= L.MAX_QUESTIONS_PER_THEME, 'theme over cap');
-    const pairs = day.rounds.map((r) => [r.left.key, r.right.key].sort().join('~'));
-    assert.equal(new Set(pairs).size, pairs.length, 'pair repeated');
   }
 });
 
-test('buildDay: no stock appears in more than 3 rounds', () => {
-  for (let d = 1; d <= 30; d++) {
-    const counts = {};
-    for (const r of build(`2026-11-${String(d).padStart(2, '0')}`).rounds) {
-      counts[r.left.key] = (counts[r.left.key] || 0) + 1;
-      counts[r.right.key] = (counts[r.right.key] || 0) + 1;
-    }
-    assert.ok(Math.max(...Object.values(counts)) <= L.MAX_APPEARANCES_PER_STOCK);
+// Two pairs: AAA/BBB is a clean sweep (BBB bigger on everything), CCC/DDD is mixed
+// (each wins some). Names are chosen so we can tell which pair the day used.
+const MIXED = {
+  CCC: fund({ mcap: 1000, pe: 10, pb: 4, yearly: [[2024, 100, 5], [2025, 110, 5.5]] }),
+  DDD: fund({ mcap: 2000, pe: 30, pb: 1, yearly: [[2024, 200, 40], [2025, 240, 60]] }),
+};
+const pairOf = (day) => [day.rounds[0].left.symbol, day.rounds[0].right.symbol].sort().join('~');
+
+test('buildDay: prefers a pair where each company wins something over a clean sweep', () => {
+  const snapshot = snapshotOf({
+    AAA: SPREAD.AAA, BBB: SPREAD.BBB, // sweep pair (BBB wins all)
+    CCC: MIXED.CCC, DDD: MIXED.DDD,   // mixed pair
+  });
+  const inst = instrumentsOf(['AAA', 'BBB', 'CCC', 'DDD']);
+  let usedSweep = 0, usedMixed = 0;
+  for (let d = 1; d <= 40; d++) {
+    const day = build(`2026-11-${String(d).padStart(2, '0')}`, snapshot, inst);
+    assert.equal(day.rounds.length, 5);
+    // Only a pair that can carry 5 questions counts; the cross pairs mix SPREAD and MIXED numbers.
+    const winners = new Set(day.rounds.map((r) => r.winnerKey));
+    if (winners.size === 1) usedSweep++; else usedMixed++;
   }
+  assert.equal(usedSweep, 0, 'a sweeping pair was used although a mixed one existed');
+  assert.ok(usedMixed > 0);
+});
+
+test('buildDay: when only sweeping pairs exist, a full day still runs (sweep beats no game)', () => {
+  const day = build(DAY); // SPREAD: the bigger company wins every question in every pair
+  assert.equal(day.rounds.length, 5);
+  assert.equal(new Set(day.rounds.map((r) => r.winnerKey)).size, 1);
 });
 
 test('buildDay: same date gives the same day, different dates differ', () => {
@@ -256,6 +286,8 @@ test('real data: every day for 90 days is a full, internally consistent day', { 
     assert.ok(day, `no day on ${dateKey}`);
     assert.equal(day.rounds.length, L.ROUNDS_PER_DAY, `short day on ${dateKey}`);
     for (const r of day.rounds) {
+      assert.equal(r.left.key, day.rounds[0].left.key, `pair changed mid-game on ${dateKey}`);
+      assert.equal(r.right.key, day.rounds[0].right.key, `pair changed mid-game on ${dateKey}`);
       const sectorOf = (k) => REAL_INSTRUMENTS[k].sector;
       assert.equal(sectorOf(r.left.key), day.sector);
       assert.equal(sectorOf(r.right.key), day.sector);

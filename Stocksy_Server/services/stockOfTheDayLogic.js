@@ -10,13 +10,17 @@
  *  1. Every question is ONE factual comparison on ONE number, worded neutrally
  *     ("who has the higher P/E"), never "who is better". The bigger number wins.
  *     Nothing is blended into a score, so there is no hidden weighting.
- *  2. A day has up to ROUNDS_PER_DAY questions. Each question is asked at most
- *     once a day and no theme (size, price, profitability, growth) is asked
- *     more than twice, so no single kind of number can decide the day. The
- *     result is simply "3 out of 5", every question counting the same.
+ *  2. A day is ONE sector, ONE pair of companies, and up to ROUNDS_PER_DAY
+ *     different questions about that same pair. The two logos never change
+ *     during a game, so the user is not thrown by a surprise third company.
+ *     Each question is asked at most once a day and no theme (size, price,
+ *     profitability, growth) is asked more than twice, so no single kind of
+ *     number can decide the day. The result is simply "3 out of 5", every
+ *     question counting the same.
  *  3. A question is only asked about a pair when BOTH companies have trustworthy
- *     data for it and the gap is clear (not a near-tie). If not, another
- *     question or pair is used instead of guessing.
+ *     data for it and the gap is clear (not a near-tie). The day's pair is the
+ *     first one (in a seeded order) that can be asked a full set of questions;
+ *     a sector with no such pair is skipped for the day. Nothing is guessed.
  *  4. Anything that would compare apples to oranges is refused:
  *       - year-based numbers (margin, growth) need BOTH companies' latest
  *         reported year to be the same year, and recent;
@@ -37,12 +41,17 @@ const ROUNDS_PER_DAY = 5;
 // If a day cannot be built to the full length, it may be shorter, but never
 // shorter than this. Below it there is no day.
 const MIN_ROUNDS = 3;
-// A sector needs this many stocks to give enough distinct pairs.
+// A sector needs this many stocks so there are enough different pairs to choose
+// from (and so the same two companies are not up every few days).
 const MIN_STOCKS_PER_SECTOR = 4;
-// One stock may appear in at most this many of a day's rounds (variety).
-const MAX_APPEARANCES_PER_STOCK = 3;
 // No theme (size / price / profitability / growth) more than this often a day.
 const MAX_QUESTIONS_PER_THEME = 2;
+// With one pair for the whole day, a pair where ONE company wins every question
+// makes the game a single tap ("always pick Eicher"). So a pair where each
+// company wins at least one question is preferred; a sweeping pair is only used
+// when the sector has no mixed pair. This never changes who wins a question, it
+// only affects which pair is chosen. Set to false to switch it off.
+const AVOID_CLEAN_SWEEP = true;
 // Yearly figures older than this many years are treated as missing.
 const MAX_STALE_YEARS = 2;
 // A winner must lead by at least this fraction of the larger value, AND by the
@@ -302,13 +311,62 @@ function groupBySector(instruments) {
   return groups;
 }
 
+/** Does one side win every one of these rounds? */
+function isSweep(items) {
+  const leftWins = items.filter((x) => x.j.winnerSide === "left").length;
+  return items.length > 0 && (leftWins === 0 || leftWins === items.length);
+}
+
+/** True if no theme appears more than MAX_QUESTIONS_PER_THEME times. */
+function withinThemeCap(items) {
+  const counts = {};
+  for (const { q } of items) counts[q.theme] = (counts[q.theme] || 0) + 1;
+  return Object.values(counts).every((n) => n <= MAX_QUESTIONS_PER_THEME);
+}
+
 /**
- * Pick up to ROUNDS_PER_DAY (pair, question) rounds inside ONE sector.
- * Distinct questions, limited questions per theme, distinct pairs, limited
- * repeats of one stock, and every
- * round must pass `judge`. Depth-first over seeded orders, so it is both
- * deterministic and finds a full day whenever one exists.
- * Returns the best list found (longest wins; the first full one stops early).
+ * From a pair's askable questions (already in seeded order) take up to
+ * ROUNDS_PER_DAY, respecting the theme cap. If that leaves one company winning
+ * everything but a spare question exists that the OTHER company wins, swap it in
+ * (last pick first), so a pair is not written off just because the one question
+ * that makes it a contest happened to be the one left out.
+ */
+function chooseQuestions(valid) {
+  const picked = [];
+  const spare = [];
+  const themeCount = {};
+  for (const item of valid) {
+    if (picked.length < ROUNDS_PER_DAY && (themeCount[item.q.theme] || 0) < MAX_QUESTIONS_PER_THEME) {
+      picked.push(item);
+      themeCount[item.q.theme] = (themeCount[item.q.theme] || 0) + 1;
+    } else {
+      spare.push(item);
+    }
+  }
+
+  if (AVOID_CLEAN_SWEEP && picked.length >= ROUNDS_PER_DAY && isSweep(picked)) {
+    const sweeper = picked[0].j.winnerSide;
+    for (const extra of spare) {
+      if (extra.j.winnerSide === sweeper) continue;
+      for (let i = picked.length - 1; i >= 0; i--) {
+        const swapped = picked.slice();
+        swapped[i] = extra;
+        if (withinThemeCap(swapped)) return swapped;
+      }
+    }
+  }
+  return picked;
+}
+
+/**
+ * Pick the day's pair inside ONE sector and up to ROUNDS_PER_DAY different
+ * questions about it. The same two companies, on the same sides, in every round.
+ *
+ * Pairs are tried in a seeded order and the first that can be asked a full set
+ * of questions, with each company winning at least one (AVOID_CLEAN_SWEEP),
+ * wins. Failing that, the first full set where one company sweeps; failing
+ * that, the pair with the most askable questions (the caller decides whether
+ * that is enough). Returns [] when no pair has any.
  */
 function buildSectorRounds({ sector, stocks, fundamentals, dateKey }) {
   const ctx = { sector, currentYear: Number.parseInt(dateKey.slice(0, 4), 10) };
@@ -321,62 +379,40 @@ function buildSectorRounds({ sector, stocks, fundamentals, dateKey }) {
   const pairOrder = shuffled(pairs, seededRandom(`pairs|${dateKey}|${sector}`));
   const questionOrder = shuffled(QUESTIONS, seededRandom(`questions|${dateKey}|${sector}`));
 
-  // Every valid (pair, question) option, computed once.
-  const options = pairOrder.map(([a, b]) => {
+  let best = null; // { left, right, picked: [{ q, j }] }, the best fallback so far
+  let firstFullSweep = null; // a full set where one company wins everything
+  for (const [a, b] of pairOrder) {
+    // Which logo is on which side is seeded, then fixed for the whole day.
     const sideRng = seededRandom(`side|${dateKey}|${sector}|${a.symbol}|${b.symbol}`);
     const [left, right] = sideRng() < 0.5 ? [a, b] : [b, a];
+
     const valid = [];
     for (const q of questionOrder) {
       const j = judge(q, snapshot[left.symbol], snapshot[right.symbol], ctx);
       if (j) valid.push({ q, j });
     }
-    return { left, right, valid };
-  });
+    const picked = chooseQuestions(valid);
 
-  let best = [];
-  const usedQuestions = new Set();
-  const themeCount = {};
-  const appearances = {};
-  const chosen = [];
-
-  function search(from) {
-    if (chosen.length > best.length) best = chosen.slice();
-    if (best.length >= ROUNDS_PER_DAY) return true;
-
-    for (let i = from; i < options.length; i++) {
-      const opt = options[i];
-      if ((appearances[opt.left.symbol] || 0) >= MAX_APPEARANCES_PER_STOCK) continue;
-      if ((appearances[opt.right.symbol] || 0) >= MAX_APPEARANCES_PER_STOCK) continue;
-
-      for (const { q, j } of opt.valid) {
-        if (usedQuestions.has(q.id)) continue;
-        if ((themeCount[q.theme] || 0) >= MAX_QUESTIONS_PER_THEME) continue;
-
-        usedQuestions.add(q.id);
-        themeCount[q.theme] = (themeCount[q.theme] || 0) + 1;
-        appearances[opt.left.symbol] = (appearances[opt.left.symbol] || 0) + 1;
-        appearances[opt.right.symbol] = (appearances[opt.right.symbol] || 0) + 1;
-        chosen.push({ opt, q, j });
-
-        if (search(i + 1)) return true;
-
-        chosen.pop();
-        appearances[opt.left.symbol] -= 1;
-        appearances[opt.right.symbol] -= 1;
-        themeCount[q.theme] -= 1;
-        usedQuestions.delete(q.id);
+    const candidate = { left, right, picked };
+    if (picked.length >= ROUNDS_PER_DAY) {
+      if (!AVOID_CLEAN_SWEEP || !isSweep(picked)) {
+        best = candidate;
+        break;
       }
+      if (!firstFullSweep) firstFullSweep = candidate;
+      continue;
     }
-    return false;
+    if (picked.length > 0 && (!best || picked.length > best.picked.length)) best = candidate;
   }
-
-  search(0);
+  // No mixed full set: a sweeping full set still beats a short day.
+  if (firstFullSweep && (!best || best.picked.length < ROUNDS_PER_DAY)) best = firstFullSweep;
+  if (!best) return [];
 
   // The order the user plays in is its own seeded shuffle, so the day does not
   // always open with the same kind of question.
-  const played = shuffled(best, seededRandom(`order|${dateKey}|${sector}`));
+  const played = shuffled(best.picked, seededRandom(`order|${dateKey}|${sector}`));
 
-  return played.map(({ opt, q, j }, index) => ({
+  return played.map(({ q, j }, index) => ({
     index,
     questionId: q.id,
     theme: q.theme,
@@ -384,18 +420,19 @@ function buildSectorRounds({ sector, stocks, fundamentals, dateKey }) {
     label: q.label,
     unit: q.unit,
     fiscalYear: j.year,
-    left: { key: opt.left.key, symbol: opt.left.symbol, name: opt.left.name },
-    right: { key: opt.right.key, symbol: opt.right.symbol, name: opt.right.name },
+    left: { key: best.left.key, symbol: best.left.symbol, name: best.left.name },
+    right: { key: best.right.key, symbol: best.right.symbol, name: best.right.name },
     leftValue: j.leftValue,
     rightValue: j.rightValue,
-    winnerKey: j.winnerSide === "left" ? opt.left.key : opt.right.key,
+    winnerKey: j.winnerSide === "left" ? best.left.key : best.right.key,
   }));
 }
 
 /**
- * Build the whole day: choose the sector and its rounds.
+ * Build the whole day: choose the sector, the pair and the questions.
  * Sectors are tried in a seeded order; the first that gives a full day wins.
  * If none does, the sector with the most rounds is used (at least MIN_ROUNDS).
+ * version 2: one pair for the whole day (version 1 changed pairs every round).
  * Returns { version, dateKey, sector, rounds } or null.
  */
 function buildDay({ instruments, fundamentals, dateKey }) {
@@ -405,9 +442,9 @@ function buildDay({ instruments, fundamentals, dateKey }) {
   let best = null;
   for (const sector of names) {
     const rounds = buildSectorRounds({ sector, stocks: groups[sector], fundamentals, dateKey });
-    if (rounds.length >= ROUNDS_PER_DAY) return { version: 1, dateKey, sector, rounds };
+    if (rounds.length >= ROUNDS_PER_DAY) return { version: 2, dateKey, sector, rounds };
     if (rounds.length >= MIN_ROUNDS && (!best || rounds.length > best.rounds.length)) {
-      best = { version: 1, dateKey, sector, rounds };
+      best = { version: 2, dateKey, sector, rounds };
     }
   }
   return best;
@@ -481,8 +518,8 @@ module.exports = {
   ROUNDS_PER_DAY,
   MIN_ROUNDS,
   MIN_STOCKS_PER_SECTOR,
-  MAX_APPEARANCES_PER_STOCK,
   MAX_QUESTIONS_PER_THEME,
+  AVOID_CLEAN_SWEEP,
   MAX_STALE_YEARS,
   MIN_RELATIVE_GAP,
   QUESTIONS,
