@@ -20,6 +20,7 @@ const TOP_COLOR_BY_ROUTE = {
   Markets: Colors.primaryDark,
   Profile: Colors.primaryDark,
   BuyOrder: Colors.white,
+  StockFaceOffIntro: Colors.primary,
 };
 
 let lastColor = null;

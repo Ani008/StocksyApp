@@ -1,4 +1,5 @@
 const service = require("../services/niftyPredictionService");
+const { recordActivitySafe } = require("../services/streakService");
 const { sendError } = require("../utils/errors");
 const logger = require("../utils/logger");
 
@@ -29,6 +30,10 @@ async function getTodayHandler(req, res) {
 async function createPredictionHandler(req, res) {
   try {
     const { alreadyMade, state } = await service.submit(req.user.id, req.body?.direction);
+    // Making today's call is what earns the day's streak. Counted even when the
+    // call already existed (a retry, or a call made before streaks needed
+    // activity): recording a day twice is a no-op. Never fails the request.
+    await recordActivitySafe(req.user.id, "nifty");
     return res.status(alreadyMade ? 200 : 201).json({ alreadyMade, ...state });
   } catch (err) {
     return sendPredictionError(res, err);

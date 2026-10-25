@@ -1,12 +1,16 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import SegmentedToggle from "../components/SegmentedToggle";
 import NiftyPredictionCard from "../components/NiftyPredictionCard";
+import DailyQuizCard from "../components/DailyQuizCard";
+import StockOfTheDayCard from "../components/StockOfTheDayCard";
+import ChallengeFriendCard from "../components/ChallengeFriendCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
+import { hasSeenFaceOffIntro } from "../utils/faceOffIntro";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const TABS = [
@@ -40,6 +44,21 @@ const DailyChallengePage = ({ navigation }) => {
   const nifty = prices["NSE_INDEX|Nifty 50"];
   const niftyLtp = nifty?.ltp;
   const niftyChange = nifty ? calcChange(nifty.ltp, nifty.cp) : null;
+
+  // Stock Face-off: the animated intro plays on each tap until the person has
+  // finished a game and seen the results; after that it goes straight to the game. The ref ignores a second tap
+  // while the (very quick) check is running.
+  const opening = useRef(false);
+  const openFaceOff = async () => {
+    if (opening.current) return;
+    opening.current = true;
+    try {
+      const seen = await hasSeenFaceOffIntro();
+      navigation.navigate(seen ? "StockOfTheDay" : "StockFaceOffIntro");
+    } finally {
+      opening.current = false;
+    }
+  };
 
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -81,7 +100,14 @@ const DailyChallengePage = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
       >
         {tab === "challenge" ? (
-          <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
+          <>
+            <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
+            <View style={styles.widgetRow}>
+              <DailyQuizCard />
+              <StockOfTheDayCard onPress={openFaceOff} />
+            </View>
+            <ChallengeFriendCard style={styles.challengeCard} />
+          </>
         ) : (
           <StreakContent />
         )}
@@ -120,6 +146,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: moderateScale(20),
     paddingBottom: moderateScale(40),
   },
+  // Square widgets sit in a row under the Nifty card (two-up grid; more games can join later).
+  widgetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginTop: moderateScale(16),
+  },
+  challengeCard: { marginTop: moderateScale(16) },
 });
 
 export default DailyChallengePage;

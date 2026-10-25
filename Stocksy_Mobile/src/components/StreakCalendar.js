@@ -12,7 +12,7 @@ const STEP = CELL + GAP;
 const MONTH_ROW = 16;
 const LABEL_W = 28;
 
-// Level 0 (nothing) to 4 (most). A check-in is level 3, the brand blue.
+// Level 0 (nothing) to 4 (most). An active day is level 3, the brand blue.
 const LEVEL_COLORS = ["#EBEFF5", "#BFDBFE", "#93C5FD", Colors.primary, Colors.primaryDark];
 const ROW_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
 
@@ -61,7 +61,7 @@ export default function StreakCalendar({ today, history, style }) {
   let detail = "Swipe for the full year · tap a day for details";
   if (selectedCell) {
     detail = `${formatDateKey(selectedCell.key)} · ${
-      selectedCell.count > 0 ? "Checked in" : "No activity"
+      selectedCell.count > 0 ? "Active" : "No activity"
     }`;
   }
 
@@ -127,7 +127,7 @@ export default function StreakCalendar({ today, history, style }) {
                         disabled={day.future}
                         onPress={() => setSelected(isSelected ? null : day.key)}
                         accessibilityLabel={`${formatDateKey(day.key)}, ${
-                          day.count > 0 ? "checked in" : "no activity"
+                          day.count > 0 ? "active" : "no activity"
                         }`}
                         style={[
                           styles.cell,
