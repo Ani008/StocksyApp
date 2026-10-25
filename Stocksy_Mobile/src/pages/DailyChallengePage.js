@@ -7,6 +7,7 @@ import SegmentedToggle from "../components/SegmentedToggle";
 import NiftyPredictionCard from "../components/NiftyPredictionCard";
 import DailyQuizCard from "../components/DailyQuizCard";
 import StockOfTheDayCard from "../components/StockOfTheDayCard";
+import RevealCover from "../components/RevealCover";
 import ChallengeFriendCard from "../components/ChallengeFriendCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
@@ -35,7 +36,7 @@ const calcChange = (ltp, cp) => {
  *   - "Daily Challenge & Games" (default): the daily Nifty prediction card
  *   - "Streaks": the streak card + activity calendar (same as StreakPage)
  */
-const DailyChallengePage = ({ navigation }) => {
+const DailyChallengePage = ({ navigation, route }) => {
   const [tab, setTab] = useState("challenge");
 
   // Live Nifty 50, from the shared market socket (same key the Dashboard uses).
@@ -50,6 +51,7 @@ const DailyChallengePage = ({ navigation }) => {
   };
 
   return (
+    <>
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
 
@@ -97,6 +99,11 @@ const DailyChallengePage = ({ navigation }) => {
         )}
       </ScrollView>
     </SafeAreaView>
+
+    {/* Plays when the Daily Quiz intro hands over: the colour it flooded the screen
+        with fades away slowly, revealing this page. */}
+    <RevealCover trigger={route?.params?.revealAt} />
+    </>
   );
 };
 

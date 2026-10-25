@@ -11,11 +11,12 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Ellipse, G, Path, Polygon } from "react-native-svg";
 
+import { QUIZ_COVER_COLOR } from "../components/RevealCover";
 import { Colors, moderateScale } from "../theme";
 
 // The native animation driver doesn't exist on web; asking for it there only logs warnings.
@@ -29,6 +30,22 @@ const BLUE_DEEP = Colors.primaryDark;
 const PINK = "#F9A8D4";
 const MINT = "#86EFAC";
 const INK = "#0F172A";
+
+// Loader timing.
+const LOAD_MS = 2000; // how long the "getting things ready" loader runs
+const EXPAND_MS = 700; // how long the dot takes to flood the screen
+
+// Loader geometry.
+const RING = 48;
+const RING_STROKE = 3;
+const RING_R = (RING - RING_STROKE) / 2;
+const RING_C = 2 * Math.PI * RING_R;
+const DOT = 14;
+const TEXT_LINE = 20;
+const TEXT_GAP = 14;
+const LOADER_BOTTOM = 28; // distance from the bottom safe edge to the message
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 /** Honour the device's "reduce motion" setting: everything then stays still. */
 function useReduceMotion() {
@@ -163,49 +180,60 @@ function RiseRow({ progress, index, children, style }) {
 
 /**
  * "Win." — white text on blue, with a white box that sweeps in from the left,
- * holds, then sweeps out to the right and repeats. The dark text is revealed only
- * where the box is (mask moves one way, its content moves the opposite way).
+ * holds, then sweeps out to the right and repeats.
+ *
+ * Built so there is only ever ONE visible "Win.": a white-text base layer, and a
+ * box (left edge L, right edge R, both animated) that clips a dark copy of the
+ * word. The dark copy is pinned to the wrapper (left = -L, fixed width) so it
+ * never drifts, and anything outside the box is cut off by overflow: hidden.
  */
 function WinHighlight({ text, textStyle, paused }) {
   const [w, setW] = useState(0);
-  // -1 = box fully off to the left, 0 = covering the word, 1 = fully off to the right.
-  const p = useRef(new Animated.Value(-1)).current;
+  const L = useRef(new Animated.Value(0)).current; // box left edge
+  const R = useRef(new Animated.Value(0)).current; // box right edge
 
   useEffect(() => {
+    if (!w) return undefined;
     if (paused) {
-      p.setValue(0);
+      L.setValue(0);
+      R.setValue(w);
       return undefined;
     }
-    p.setValue(-1);
+    L.setValue(0);
+    R.setValue(0);
     const loop = Animated.loop(
       Animated.sequence([
         Animated.delay(900),
-        Animated.timing(p, { toValue: 0, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: NATIVE }),
+        // sweep in: right edge runs left -> right
+        Animated.timing(R, { toValue: w, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
         Animated.delay(2600),
-        Animated.timing(p, { toValue: 1, duration: 700, easing: Easing.in(Easing.cubic), useNativeDriver: NATIVE }),
+        // sweep out: left edge catches up, left -> right
+        Animated.timing(L, { toValue: w, duration: 700, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
         Animated.delay(500),
+        // reset for the next pass
+        Animated.parallel([
+          Animated.timing(L, { toValue: 0, duration: 0, useNativeDriver: false }),
+          Animated.timing(R, { toValue: 0, duration: 0, useNativeDriver: false }),
+        ]),
       ]),
     );
     loop.start();
     return () => loop.stop();
-  }, [p, paused]);
+  }, [L, R, w, paused]);
 
-  const maskX = p.interpolate({ inputRange: [-1, 1], outputRange: [-w, w] });
-  const innerX = p.interpolate({ inputRange: [-1, 1], outputRange: [w, -w] });
+  const boxWidth = useMemo(() => Animated.subtract(R, L), [L, R]);
+  const innerLeft = useMemo(() => Animated.multiply(L, -1), [L]);
 
   return (
-    <View
-      style={styles.winWrap}
-      onLayout={(e) => setW(Math.ceil(e.nativeEvent.layout.width))}
-    >
+    <View style={styles.winWrap} onLayout={(e) => setW(Math.ceil(e.nativeEvent.layout.width))}>
       {/* base layer: white text, also sizes the wrapper */}
       <Text style={[textStyle, styles.winPad]} numberOfLines={1}>
         {text}
       </Text>
 
       {w > 0 && (
-        <Animated.View style={[styles.winMask, { transform: [{ translateX: maskX }] }]}>
-          <Animated.View style={[styles.winInner, { transform: [{ translateX: innerX }] }]}>
+        <Animated.View style={[styles.winBox, { left: L, width: boxWidth }]}>
+          <Animated.View style={[styles.winInner, { left: innerLeft, width: w }]}>
             <Text style={[textStyle, styles.winPad, { color: BLUE_DEEP }]} numberOfLines={1}>
               {text}
             </Text>
@@ -227,6 +255,17 @@ function Pill({ label, bg, fg, fs }) {
   );
 }
 
+/** "..." that cycles 0-3 dots; sits in a fixed-width box so the message never jitters. */
+function Ellipsis({ style, paused }) {
+  const [n, setN] = useState(3);
+  useEffect(() => {
+    if (paused) return undefined;
+    const id = setInterval(() => setN((c) => (c + 1) % 4), 380);
+    return () => clearInterval(id);
+  }, [paused]);
+  return <Text style={[style, styles.ellipsis]}>{".".repeat(n)}</Text>;
+}
+
 /**
  * DailyQuizIntroPage — full-screen "Daily Quiz" intro, opened from the Daily Quiz card.
  *
@@ -234,14 +273,28 @@ function Pill({ label, bg, fg, fs }) {
  *   "Learn, grow, [Win.]  Take the first step with us"
  * where a white box keeps sweeping left -> right behind "Win.". A flower, a
  * starburst and a squiggle (all SVG) float and breathe around it, together with
- * a few small tags. Animations pause when the device's "reduce motion" is on.
+ * a few small tags.
+ *
+ * At the bottom a ring fills over LOAD_MS (2s) around a breathing dot, under the
+ * message "We're making things ready for you". When the ring completes the dot
+ * floods the whole screen (white -> QUIZ_COVER_COLOR) and the screen hands over to
+ * the Daily Challenge page, which fades the same colour away slowly (RevealCover)
+ * — so the illustration screen is gone and the page underneath is revealed.
+ *
+ * Animations are shortened / paused when the device's "reduce motion" is on.
  */
 export default function DailyQuizIntroPage({ navigation }) {
-  const { width } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const reduceMotion = useReduceMotion();
 
-  // Type scale follows the screen width, capped for tablets / web.
-  const fs = Math.min(width * 0.15, 68);
+  // Real size of the screen (falls back to the window until the first layout).
+  const [box, setBox] = useState({ w: winW, h: winH });
+  const width = box.w;
+  const height = box.h;
+
+  // Type scale follows the screen, capped for tablets / web and for short phones.
+  const fs = Math.min(width * 0.15, height * 0.078, 68);
   const textStyle = {
     color: Colors.white,
     fontSize: fs,
@@ -253,6 +306,12 @@ export default function DailyQuizIntroPage({ navigation }) {
   const flowerSize = Math.min(width * 0.42, 190);
   const burstSize = fs * 1.35;
   const squiggleSize = fs * 1.5;
+
+  // Where the loader sits (centre of the ring / dot), measured from the screen's top-left.
+  const cx = width / 2;
+  const cy = height - insets.bottom - LOADER_BOTTOM - TEXT_LINE - TEXT_GAP - RING / 2;
+  // A circle this big covers the whole screen from any point on it.
+  const COVER_D = Math.ceil(Math.hypot(width, height) * 2);
 
   // Entrance: one value drives all the staggered rows.
   const enter = useRef(new Animated.Value(0)).current;
@@ -272,13 +331,112 @@ export default function DailyQuizIntroPage({ navigation }) {
     return () => anim.stop();
   }, [enter, reduceMotion]);
 
+  // Loader: progress (ring) -> expand (dot floods the screen) -> hand over.
+  const progress = useRef(new Animated.Value(0)).current; // 0 -> 1 over LOAD_MS
+  const expand = useRef(new Animated.Value(0)).current; // 0 -> 1 while flooding
+  const loaderIn = useRef(new Animated.Value(0)).current; // ring + message fade in
+  const loaderOut = useRef(new Animated.Value(0)).current; // ring + message fade out
+  const pulse = useLoop(900, 0, reduceMotion);
+  const handedOver = useRef(false);
+
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate("MainTabs");
   };
 
+  const handOver = () => {
+    if (handedOver.current) return;
+    handedOver.current = true;
+    // Going to the existing Daily Challenge route pops this screen; the new param
+    // tells that page to play its slow reveal.
+    navigation.navigate("DailyChallenge", { revealAt: Date.now() });
+  };
+
+  useEffect(() => {
+    // Everything that touches the loader's opacity is JS-driven (it is combined with
+    // `expand`, which animates colour and so can't be native); only the dot's pulse is native.
+    const fadeIn = Animated.timing(loaderIn, {
+      toValue: 1,
+      duration: 350,
+      delay: 250,
+      useNativeDriver: false,
+    });
+    const run = Animated.sequence([
+      // The 2-second timer: the ring fills.
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: LOAD_MS,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }),
+      // Then the dot floods the screen while the ring + message disappear.
+      Animated.parallel([
+        Animated.timing(expand, {
+          toValue: 1,
+          duration: reduceMotion ? 250 : EXPAND_MS,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false,
+        }),
+        Animated.timing(loaderOut, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: false,
+        }),
+      ]),
+    ]);
+    fadeIn.start();
+    run.start(({ finished }) => {
+      if (finished) handOver();
+    });
+    return () => {
+      fadeIn.stop();
+      run.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduceMotion]);
+
+  // Ring: strokeDashoffset runs full -> 0.
+  const dashOffset = progress.interpolate({ inputRange: [0, 1], outputRange: [RING_C, 0] });
+
+  // Ring + message: fade in, later fade out.
+  const loaderOpacity = useMemo(
+    () =>
+      Animated.multiply(
+        loaderIn,
+        loaderOut.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+      ),
+    [loaderIn, loaderOut],
+  );
+
+  // Dot: breathes while loading; swapped for the flood circle the instant expansion starts.
+  const dotScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.25] });
+  const dotOpacity = useMemo(
+    () =>
+      Animated.multiply(
+        loaderIn,
+        expand.interpolate({ inputRange: [0, 0.001], outputRange: [1, 0], extrapolate: "clamp" }),
+      ),
+    [loaderIn, expand],
+  );
+
+  // Flood circle: starts exactly the size of the dot, grows past the screen corners,
+  // and turns from white into the cover colour on the way.
+  const floodScale = expand.interpolate({ inputRange: [0, 1], outputRange: [DOT / COVER_D, 1] });
+  const floodOpacity = expand.interpolate({ inputRange: [0, 0.001, 1], outputRange: [0, 1, 1] });
+  const floodColor = expand.interpolate({
+    inputRange: [0, 0.7],
+    outputRange: ["#FFFFFF", QUIZ_COVER_COLOR],
+    extrapolate: "clamp",
+  });
+
   return (
-    <View style={styles.root}>
+    <View
+      style={styles.root}
+      onLayout={(e) => {
+        const { width: w, height: h } = e.nativeEvent.layout;
+        if (w && h && (Math.abs(w - box.w) > 1 || Math.abs(h - box.h) > 1)) setBox({ w, h });
+      }}
+    >
       <StatusBar barStyle="light-content" backgroundColor={BLUE_LIGHT} />
       <LinearGradient
         colors={[BLUE_LIGHT, BLUE_DEEP]}
@@ -300,7 +458,7 @@ export default function DailyQuizIntroPage({ navigation }) {
 
         {/* big flower, top-right, behind the copy */}
         <Floaty
-          style={[styles.flower, { top: moderateScale(70), right: -flowerSize * 0.1 }]}
+          style={[styles.flower, { top: moderateScale(52), right: -flowerSize * 0.1 }]}
           floatBy={9}
           sway={6}
           tilt={-8}
@@ -418,12 +576,82 @@ export default function DailyQuizIntroPage({ navigation }) {
           </RiseRow>
         </View>
       </SafeAreaView>
+
+      {/* ── loader (bottom): ring fills over 2s around a breathing dot ─────── */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.ring,
+          { left: cx - RING / 2, top: cy - RING / 2, opacity: loaderOpacity },
+        ]}
+      >
+        <Svg width={RING} height={RING}>
+          <Circle
+            cx={RING / 2}
+            cy={RING / 2}
+            r={RING_R}
+            stroke="rgba(255,255,255,0.28)"
+            strokeWidth={RING_STROKE}
+            fill="none"
+          />
+          <G rotation="-90" origin={`${RING / 2}, ${RING / 2}`}>
+            <AnimatedCircle
+              cx={RING / 2}
+              cy={RING / 2}
+              r={RING_R}
+              stroke={Colors.white}
+              strokeWidth={RING_STROKE}
+              strokeLinecap="round"
+              fill="none"
+              strokeDasharray={`${RING_C} ${RING_C}`}
+              strokeDashoffset={dashOffset}
+            />
+          </G>
+        </Svg>
+      </Animated.View>
+
+      {/* outer view: JS-driven opacity; inner view: native-driven breathing */}
+      <Animated.View
+        pointerEvents="none"
+        style={{ position: "absolute", left: cx - DOT / 2, top: cy - DOT / 2, opacity: dotOpacity }}
+      >
+        <Animated.View style={[styles.dot, { transform: [{ scale: dotScale }] }]} />
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.message,
+          { bottom: insets.bottom + LOADER_BOTTOM, opacity: loaderOpacity },
+        ]}
+      >
+        <Text style={styles.messageText} accessibilityLiveRegion="polite">
+          We’re making things ready for you
+        </Text>
+        <Ellipsis style={styles.messageText} paused={reduceMotion} />
+      </Animated.View>
+
+      {/* ── flood: starts as the dot, grows to cover the screen ─────────────── */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          width: COVER_D,
+          height: COVER_D,
+          borderRadius: COVER_D / 2,
+          left: cx - COVER_D / 2,
+          top: cy - COVER_D / 2,
+          backgroundColor: floodColor,
+          opacity: floodOpacity,
+          transform: [{ scale: floodScale }],
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BLUE_DEEP },
+  root: { flex: 1, backgroundColor: BLUE_DEEP, overflow: "hidden" },
   safe: { flex: 1 },
 
   closeBtn: {
@@ -438,11 +666,13 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
 
+  // The copy block is centred in the space above the loader, so it sits higher than
+  // before: the big bottom padding reserves the loader's room and lifts the text.
   copy: {
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: moderateScale(24),
-    paddingBottom: moderateScale(24),
+    paddingBottom: RING + TEXT_GAP + TEXT_LINE + LOADER_BOTTOM + moderateScale(40),
   },
   row: { position: "relative" },
 
@@ -453,16 +683,44 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   winPad: { paddingHorizontal: moderateScale(8) },
-  winMask: {
-    ...StyleSheet.absoluteFillObject,
+  winBox: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
     backgroundColor: Colors.white,
     overflow: "hidden",
   },
-  winInner: { ...StyleSheet.absoluteFillObject },
+  winInner: { position: "absolute", top: 0, bottom: 0 },
 
   // doodle placement
   flower: { position: "absolute" },
   pillSlot: { position: "absolute" },
   burstSlot: { position: "absolute", left: 0 },
   pill: { borderRadius: 99 },
+
+  // loader
+  ring: { position: "absolute", width: RING, height: RING },
+  dot: {
+    width: DOT,
+    height: DOT,
+    borderRadius: DOT / 2,
+    backgroundColor: Colors.white,
+  },
+  message: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: TEXT_LINE,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  messageText: {
+    color: Colors.white,
+    fontSize: 15,
+    lineHeight: TEXT_LINE,
+    fontWeight: "600",
+    letterSpacing: 0.1,
+  },
+  ellipsis: { width: 18, textAlign: "left" },
 });
