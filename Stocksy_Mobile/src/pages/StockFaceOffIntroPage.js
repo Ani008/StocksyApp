@@ -17,7 +17,6 @@ import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Ellipse, G, Path, Polygon } from "react-native-svg";
 
 import { QUIZ_COVER_COLOR } from "../components/RevealCover";
-import { markFaceOffIntroSeen } from "../utils/faceOffIntro";
 import { Colors, moderateScale } from "../theme";
 
 // The native animation driver doesn't exist on web; asking for it there only logs warnings.
@@ -270,8 +269,11 @@ function Ellipsis({ style, paused }) {
 /**
  * StockFaceOffIntroPage — full-screen intro for the Stock Face-off game.
  *
- * Shown ONLY the first time a person taps the Stock Face-off card (DailyChallengePage
- * checks utils/faceOffIntro). Every later tap goes straight to the game.
+ * Shown every time a person taps the Stock Face-off card UNTIL they have completed
+ * the game and seen the results screen once (DailyChallengePage checks
+ * utils/faceOffIntro; StockOfTheDayPage marks it seen when the results show).
+ * Leaving half-way (say 4 of 5 answered) does not count, so the intro plays again
+ * and then continues the game where it was. After that, taps go straight to the game.
  *
  * Theme-blue screen with big white copy that rises in row by row:
  *   "Learn, grow, [Win.]  Take the first step with us"
@@ -281,8 +283,7 @@ function Ellipsis({ style, paused }) {
  *
  * At the bottom a ring fills over LOAD_MS (2s) around a breathing dot, under the
  * message "We're making things ready for you". When the ring completes the dot
- * floods the whole screen (white -> QUIZ_COVER_COLOR), the intro is marked as seen,
- * and this screen is REPLACED by the questions screen (StockOfTheDay), which fades
+ * floods the whole screen (white -> QUIZ_COVER_COLOR) and this screen is REPLACED by the questions screen (StockOfTheDay), which fades
  * the same colour away slowly (RevealCover). Back from the game therefore lands on
  * the Daily Challenge page, never on this intro.
  *
@@ -351,12 +352,11 @@ export default function StockFaceOffIntroPage({ navigation }) {
     else navigation.navigate("MainTabs");
   };
 
-  const handOver = async () => {
-    if (handedOver.current) return;
+  const handOver = () => {
+    if (handedOver.current || !alive.current) return;
     handedOver.current = true;
-    // Remember first, so even if the next step fails the intro never replays.
-    await markFaceOffIntroSeen();
-    if (!alive.current) return; // closed while saving
+    // The intro is NOT marked as seen here: it keeps coming back until the person
+    // has reached the results screen (StockOfTheDayPage marks it then).
     // Replace (not push): back from the game goes to Daily Challenge, not here. The
     // param tells the game screen to play its slow reveal.
     navigation.replace("StockOfTheDay", { revealAt: Date.now() });

@@ -3,9 +3,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 /**
  * "Have I shown this person the Stock Face-off intro yet?"
  *
- * The animated intro plays once, the very first time someone taps the Stock
- * Face-off card. After that the card goes straight to the game (questions, then
- * the result, which the server already locks for the day).
+ * The animated intro plays every time someone taps the Stock Face-off card until
+ * they have COMPLETED the game and the results screen has been shown once (that is
+ * when StockOfTheDayPage calls markFaceOffIntroSeen). Quitting part-way does not
+ * count. After that the card goes straight to the game (questions, then the
+ * result, which the server already locks for the day).
  *
  * The flag lives on the device, per account, so two people sharing a phone each
  * see it once. Logging out clears "user" but not this key, so logging back in does
@@ -38,7 +40,7 @@ export async function hasSeenFaceOffIntro() {
   }
 }
 
-/** Remember that the intro has been shown. Best effort: a failed write is ignored. */
+/** Remember that this account has finished a game. Best effort: a failed write is ignored. */
 export async function markFaceOffIntroSeen() {
   try {
     await AsyncStorage.setItem(await keyForUser(), "1");

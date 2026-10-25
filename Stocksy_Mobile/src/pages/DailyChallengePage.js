@@ -45,8 +45,8 @@ const DailyChallengePage = ({ navigation }) => {
   const niftyLtp = nifty?.ltp;
   const niftyChange = nifty ? calcChange(nifty.ltp, nifty.cp) : null;
 
-  // Stock Face-off: the animated intro plays only the first time someone taps the
-  // card; after that it goes straight to the game. The ref ignores a second tap
+  // Stock Face-off: the animated intro plays on each tap until the person has
+  // finished a game and seen the results; after that it goes straight to the game. The ref ignores a second tap
   // while the (very quick) check is running.
   const opening = useRef(false);
   const openFaceOff = async () => {

@@ -1,17 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Platform, StyleSheet } from "react-native";
 
+import { Colors } from "../theme";
+
 // The native animation driver doesn't exist on web; asking for it there only logs warnings.
 const NATIVE = Platform.OS !== "web";
 
 /**
- * Colour of the screen the Daily Quiz intro expands into, and that RevealCover
- * then fades away.
- *
- * TEMPORARY: red, so the hand-off is easy to see while the next screen is being
- * built. Change to "#FFFFFF" (or the real next screen's background) when ready.
+ * Colour of the screen the Stock Face-off intro expands into, and that RevealCover
+ * then fades away. It is the app's own page background, so the hand-off into the
+ * game looks seamless.
  */
-export const QUIZ_COVER_COLOR = "#EF4444";
+export const QUIZ_COVER_COLOR = Colors.background;
 
 /**
  * RevealCover — a full-screen sheet that appears at once whenever `trigger`

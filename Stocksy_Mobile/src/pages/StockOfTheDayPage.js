@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { INSTRUMENTS } from "./SearchPage";
 import useStockOfTheDay from "../hooks/useStockOfTheDay";
 import RevealCover from "../components/RevealCover";
+import { markFaceOffIntroSeen } from "../utils/faceOffIntro";
 import {
   answersText,
   formatValue,
@@ -364,6 +365,14 @@ const StockOfTheDayPage = ({ navigation, route }) => {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate("MainTabs");
   };
+
+  // The results screen is up: the game has been completed, so the animated intro
+  // has done its job and never plays again for this account. (Answering 4 of 5 and
+  // leaving does not reach this, so the intro still plays next time.)
+  const resultShown = !!(state && state.complete && state.result);
+  useEffect(() => {
+    if (resultShown) markFaceOffIntroSeen();
+  }, [resultShown]);
 
   // The first round with no answer yet (rounds are played in order).
   const current = useMemo(
