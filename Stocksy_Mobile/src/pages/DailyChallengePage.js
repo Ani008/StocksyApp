@@ -87,7 +87,7 @@ const DailyChallengePage = ({ navigation }) => {
           <>
             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
             <View style={styles.widgetRow}>
-              <DailyQuizCard />
+              <DailyQuizCard onPress={() => navigation.navigate("DailyQuiz")} />
               <StockOfTheDayCard onPress={() => navigation.navigate("StockOfTheDay")} />
             </View>
             <ChallengeFriendCard style={styles.challengeCard} />

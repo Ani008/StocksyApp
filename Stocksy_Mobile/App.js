@@ -71,6 +71,7 @@ import WatchlistPage from "./src/pages/WatchlistPage";
 import StreakPage from "./src/pages/StreakPage";
 import DailyChallengePage from "./src/pages/DailyChallengePage";
 import StockOfTheDayPage from "./src/pages/StockOfTheDayPage";
+import DailyQuizIntroPage from "./src/pages/DailyQuizIntroPage";
 
 // ─── Tab screens ──────────────────────────────────────────────────────────────
 import DashboardPage from "./src/pages/DashboardPage";
@@ -332,6 +333,11 @@ function AppContent() {
               component={DailyChallengePage}
             />
             <Stack.Screen name="StockOfTheDay" component={StockOfTheDayPage} />
+            <Stack.Screen
+              name="DailyQuiz"
+              component={DailyQuizIntroPage}
+              options={{ animation: "fade" }}
+            />
 
             <Stack.Screen name="Search" component={SearchPage} />
             <Stack.Screen name="StockDetail" component={StockDetailPage} />
