@@ -13,7 +13,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * see it once. Logging out clears "user" but not this key, so logging back in does
  * not replay it. A new phone, a reinstall or cleared browser data shows it again once.
  */
-const KEY_PREFIX = "stocksy.faceoff.intro.seen.v1.";
+// v2: the first build marked the intro "seen" as soon as its loader finished, before
+// anyone had played. Those leftover v1 flags are ignored by moving to a new key.
+const KEY_PREFIX = "stocksy.faceoff.intro.seen.v2.";
 
 // Same account id the streak cache uses, so both agree on who "this person" is.
 async function keyForUser() {
