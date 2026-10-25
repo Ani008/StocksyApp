@@ -1,10 +1,9 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 // import { Ionicons } from "@expo/vector-icons"; // avatars (parked, see below)
 import FloatingCandles from "./FloatingCandles";
 
-import { Colors, fontScale, moderateScale } from "../theme";
+import { Colors, Shadows, fontScale, moderateScale } from "../theme";
 
 // ── Avatars: PARKED until the avatar library exists ──────────────────────────
 // Everything for the avatar row is commented out, not deleted. To bring it
@@ -48,45 +47,52 @@ export default function DailyChallengeCard({
   const lines = String(title).split("\n");
 
   return (
-    <LinearGradient
-      colors={[Colors.primaryLight, "#BFDBFE"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.card, style]}
-    >
-      {/* floating red + green candlesticks, vertically centred on the right */}
-      <FloatingCandles style={styles.candles} />
+    // The outer view holds the shadow: the inner view clips its contents
+    // (overflow: "hidden"), which would also clip a shadow drawn on it.
+    <View style={[styles.shadow, style]}>
+      <View style={styles.card}>
+        {/* floating red + green candlesticks, vertically centred on the right */}
+        <FloatingCandles style={styles.candles} />
 
-      <View style={styles.textBlock}>
-        <Text style={styles.title} accessibilityRole="header">
-          {lines.join("\n")}
-        </Text>
-        <Text style={styles.subtitle}>{keepTimeTogether(subtitle)}</Text>
-      </View>
+        <View style={styles.textBlock}>
+          <Text style={styles.title} accessibilityRole="header">
+            {lines.join("\n")}
+          </Text>
+          <Text style={styles.subtitle}>{keepTimeTogether(subtitle)}</Text>
+        </View>
 
-      {/* Avatar row: parked until the avatar library exists (uncomment to restore).
-      <View style={styles.people} accessibilityLabel={`${avatars.length + extra} people`}>
-        {avatars.map((a, i) => (
-          <View
-            key={i}
-            style={[styles.avatar, { backgroundColor: a.bg, marginLeft: i === 0 ? 0 : -AVATAR_OVERLAP, zIndex: avatars.length - i }]}
-          >
-            <Ionicons name={a.icon || "person"} size={moderateScale(20)} color={Colors.white} />
-          </View>
-        ))}
-        {extra > 0 ? (
-          <View style={[styles.avatar, styles.extra, { marginLeft: -AVATAR_OVERLAP }]}>
-            <Text style={styles.extraText}>+{extra}</Text>
-          </View>
-        ) : null}
+        {/* Avatar row: parked until the avatar library exists (uncomment to restore).
+        <View style={styles.people} accessibilityLabel={`${avatars.length + extra} people`}>
+          {avatars.map((a, i) => (
+            <View
+              key={i}
+              style={[styles.avatar, { backgroundColor: a.bg, marginLeft: i === 0 ? 0 : -AVATAR_OVERLAP, zIndex: avatars.length - i }]}
+            >
+              <Ionicons name={a.icon || "person"} size={moderateScale(20)} color={Colors.white} />
+            </View>
+          ))}
+          {extra > 0 ? (
+            <View style={[styles.avatar, styles.extra, { marginLeft: -AVATAR_OVERLAP }]}>
+              <Text style={styles.extraText}>+{extra}</Text>
+            </View>
+          ) : null}
+        </View>
+        */}
       </View>
-      */}
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // White like the other cards in the carousel, with the same soft shadow.
+  shadow: {
+    borderRadius: 24,
+    minHeight: moderateScale(240),
+    backgroundColor: Colors.card,
+    ...Shadows.card,
+  },
   card: {
+    flex: 1,
     borderRadius: 24,
     padding: moderateScale(22),
     overflow: "hidden",
