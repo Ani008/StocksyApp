@@ -39,7 +39,7 @@ const SUN = "#FFD84D";
 
 const BORDER = 2.5;
 const OFFSET = 6; // hard shadow offset
-const GAP = 6;
+const GAP = 12;
 const CELL = 44; // grid square
 
 /**
@@ -285,7 +285,7 @@ function RoundRow({ round, anim, widths, animate, onViewStock }) {
           opacity: anim,
           transform: [{ translateX: range(anim, -30, 0) }],
           alignSelf: "flex-start",
-          marginBottom: moderateScale(8),
+          marginBottom: moderateScale(14),
         }}
       >
         <QuestionPill text={round.text} />
@@ -455,11 +455,11 @@ export default function StockFaceOffResult({ result, sector, navigation, onDone 
   };
 
   // Layout from the real width: [category | left | right].
-  const pad = moderateScale(16);
+  const pad = moderateScale(20);
   const innerW = Math.max(0, box.width - pad * 2);
   const catW = Math.floor(innerW * 0.29);
   const cardW = Math.floor((innerW - catW - GAP * 2) / 2);
-  const cardH = Math.max(moderateScale(132), Math.round(cardW * 1.08));
+  const cardH = Math.max(moderateScale(150), Math.round(cardW * 1.2));
   const widths = { catW, cardW, cardH };
 
   // One "View stock" button per company, but only when the day is one pair
@@ -489,7 +489,7 @@ export default function StockFaceOffResult({ result, sector, navigation, onDone 
             <Animated.View
               style={{
                 flex: 1,
-                paddingRight: moderateScale(10),
+                paddingRight: moderateScale(14),
                 opacity: pop,
                 transform: [{ rotate: range(headWobble, "-2.5deg", "2deg") }],
               }}
@@ -515,7 +515,7 @@ export default function StockFaceOffResult({ result, sector, navigation, onDone 
             >
               <Stacked
                 width={Math.min(innerW * 0.62, moderateScale(250))}
-                height={moderateScale(96)}
+                height={moderateScale(108)}
                 radius={moderateScale(26)}
                 color={LIME}
               >
@@ -575,10 +575,10 @@ export default function StockFaceOffResult({ result, sector, navigation, onDone 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: PAPER, overflow: "hidden" },
   content: {
-    paddingTop: moderateScale(10),
-    paddingBottom: moderateScale(48),
+    paddingTop: moderateScale(18),
+    paddingBottom: moderateScale(72),
   },
-  top: { flexDirection: "row", alignItems: "center", marginTop: moderateScale(4) },
+  top: { flexDirection: "row", alignItems: "center", marginTop: moderateScale(8) },
   sectorChip: {
     alignSelf: "flex-start",
     backgroundColor: SUN,
@@ -587,7 +587,7 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(8),
     paddingHorizontal: moderateScale(8),
     paddingVertical: moderateScale(2),
-    marginBottom: moderateScale(6),
+    marginBottom: moderateScale(10),
   },
   sectorText: { color: INK, fontSize: fontScale(10), fontWeight: "900", letterSpacing: 0.6 },
   headline: {
@@ -627,10 +627,10 @@ const styles = StyleSheet.create({
     color: INK,
     fontSize: fontScale(12),
     fontWeight: "600",
-    marginTop: moderateScale(14),
-    marginBottom: moderateScale(8),
+    marginTop: moderateScale(22),
+    marginBottom: moderateScale(10),
   },
-  round: { marginTop: moderateScale(20) },
+  round: { marginTop: moderateScale(38) },
   qPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -661,8 +661,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: moderateScale(8),
-    paddingHorizontal: moderateScale(6),
+    paddingVertical: moderateScale(12),
+    paddingHorizontal: moderateScale(8),
   },
   sideName: {
     color: INK,
@@ -694,7 +694,7 @@ const styles = StyleSheet.create({
     transform: [{ rotate: "6deg" }],
   },
   winStickerText: { color: INK, fontSize: fontScale(8.5), fontWeight: "900", letterSpacing: 0.4 },
-  pickSlot: { height: moderateScale(26), marginTop: moderateScale(3), alignItems: "flex-start" },
+  pickSlot: { height: moderateScale(32), marginTop: moderateScale(8), alignItems: "flex-start" },
   pickPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -706,8 +706,8 @@ const styles = StyleSheet.create({
     paddingVertical: moderateScale(2),
   },
   pickText: { color: INK, fontSize: fontScale(9.5), fontWeight: "900", letterSpacing: 0.3 },
-  btnRow: { flexDirection: "row", gap: GAP, marginTop: moderateScale(26) },
-  doneWrap: { marginTop: moderateScale(16) },
+  btnRow: { flexDirection: "row", gap: GAP, marginTop: moderateScale(44) },
+  doneWrap: { marginTop: moderateScale(26) },
   btnInner: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: moderateScale(8) },
   btnPill: {
     alignSelf: "stretch",
