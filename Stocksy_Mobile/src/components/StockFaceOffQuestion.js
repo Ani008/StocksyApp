@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: moderateScale(12),
   },
-  stripText: { flex: 1, color: INK, fontSize: fontScale(12.5), lineHeight: fontScale(18), fontWeight: "700", letterSpacing: 0.3 },
+  stripText: { flex: 1, color: INK, fontSize: fontScale(10), lineHeight: fontScale(18), fontWeight: "700", letterSpacing: 0.3 },
   panel: {
     marginTop: GAP,
     backgroundColor: SKY,

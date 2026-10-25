@@ -39,7 +39,7 @@ const SUN = "#FFD84D";
 
 const BORDER = 2.5;
 const OFFSET = 6; // hard shadow offset
-const GAP = 12;
+const GAP = 6;
 const CELL = 44; // grid square
 
 /**
