@@ -64,3 +64,28 @@ export function sidesOf(round) {
   const side = (key) => (key === round.left.key ? "left" : key === round.right.key ? "right" : null);
   return { winner: side(round.winnerKey), picked: side(round.pickedKey) };
 }
+
+/**
+ * The short word on a result round's category card ("AGE", "SALES", ...), taken
+ * from the label the server sends. An unknown label is shown as is, in capitals.
+ */
+const CATEGORY_WORDS = {
+  founded: "AGE",
+  "sales growth": "SALES",
+  "market value": "VALUATION",
+  "profit margin": "MARGIN",
+  "yearly profit": "PROFIT",
+};
+export const categoryWord = (label) => {
+  const text = String(label || "").trim();
+  return CATEGORY_WORDS[text.toLowerCase()] || text.toUpperCase();
+};
+
+/** Font size that keeps a compared number on one line inside a result card. */
+export function valueFontSize(text) {
+  const n = String(text || "").length;
+  if (n <= 6) return 24;
+  if (n <= 9) return 19;
+  if (n <= 11) return 16;
+  return 14;
+}

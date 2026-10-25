@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   answersText,
+  categoryWord,
+  valueFontSize,
   formatValue,
   groupIndian,
   isGrowthLabel,
@@ -95,4 +97,21 @@ test("sidesOf: which logo won and which the user picked", () => {
   assert.deepEqual(sidesOf(round), { winner: "right", picked: "left" });
   assert.deepEqual(sidesOf({ ...round, pickedKey: "B" }), { winner: "right", picked: "right" });
   assert.deepEqual(sidesOf({ ...round, pickedKey: "Z" }), { winner: "right", picked: null });
+});
+
+test("categoryWord: short card word per question, unknown labels shown in capitals", () => {
+  assert.equal(categoryWord("Founded"), "AGE");
+  assert.equal(categoryWord("Sales growth"), "SALES");
+  assert.equal(categoryWord("Market value"), "VALUATION");
+  assert.equal(categoryWord("Profit margin"), "MARGIN");
+  assert.equal(categoryWord("Yearly profit"), "PROFIT");
+  assert.equal(categoryWord("P/E ratio"), "P/E RATIO");
+  assert.equal(categoryWord(undefined), "");
+});
+
+test("valueFontSize: longer numbers get a smaller size", () => {
+  assert.ok(valueFontSize("1892") >= valueFontSize("+10.2%"));
+  assert.ok(valueFontSize("+10.2%") > valueFontSize("₹54,298 Cr"));
+  assert.ok(valueFontSize("+10.2%") > valueFontSize("₹1.19 lakh Cr"));
+  assert.ok(valueFontSize("₹3,18,556 Cr") >= 12);
 });
