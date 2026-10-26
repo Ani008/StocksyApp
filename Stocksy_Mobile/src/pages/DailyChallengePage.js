@@ -11,6 +11,7 @@ import ChallengeFriendCard from "../components/ChallengeFriendCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
 import { hasSeenFaceOffIntro } from "../utils/faceOffIntro";
+import { showToast } from "../../services/uiBridge";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const TABS = [
@@ -60,6 +61,16 @@ const DailyChallengePage = ({ navigation }) => {
     }
   };
 
+  // Daily Quiz and Challenge a Friend aren't built yet: tell the person instead of
+  // doing nothing. Throttled so rapid taps (or a slide plus a tap) show one message.
+  const lastNotice = useRef(0);
+  const comingSoon = (name) => () => {
+    const now = Date.now();
+    if (now - lastNotice.current < 2500) return;
+    lastNotice.current = now;
+    showToast(`${name} is under development. Coming soon!`, "warning");
+  };
+
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate("MainTabs");
@@ -103,10 +114,14 @@ const DailyChallengePage = ({ navigation }) => {
           <>
             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
             <View style={styles.widgetRow}>
-              <DailyQuizCard />
+              <DailyQuizCard onPress={comingSoon("Daily Quiz")} />
               <StockOfTheDayCard onPress={openFaceOff} />
             </View>
-            <ChallengeFriendCard style={styles.challengeCard} />
+            <ChallengeFriendCard
+              style={styles.challengeCard}
+              onPress={comingSoon("Challenge a Friend")}
+              onChallenge={comingSoon("Challenge a Friend")}
+            />
           </>
         ) : (
           <StreakContent />

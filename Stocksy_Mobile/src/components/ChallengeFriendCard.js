@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -24,6 +24,7 @@ const INK = "#1E1B4B"; // deep indigo for the button track
  *   title        string    — default "Challenge your friend for exciting trading game"
  *   buttonLabel  string    — default "Slide to challenge"
  *   onChallenge  function  — called when the slide completes (optional)
+ *   onPress      function  — called when the card itself is tapped (optional)
  *   style        object    — merged onto the outer card container
  */
 export default function ChallengeFriendCard({
@@ -31,10 +32,16 @@ export default function ChallengeFriendCard({
   title = "Challenge your friend for exciting trading game",
   buttonLabel = "Slide to challenge",
   onChallenge,
+  onPress,
   style,
 }) {
+  const Wrapper = onPress ? TouchableOpacity : View;
+  const wrapperProps = onPress
+    ? { onPress, activeOpacity: 0.92, accessibilityRole: "button", accessibilityLabel: title }
+    : {};
+
   return (
-    <View style={[styles.shadow, style]}>
+    <Wrapper {...wrapperProps} style={[styles.shadow, style]}>
       <LinearGradient
         colors={[LAVENDER_LIGHT, LAVENDER_DEEP]}
         start={{ x: 0, y: 0 }}
@@ -65,7 +72,7 @@ export default function ChallengeFriendCard({
           style={styles.button}
         />
       </LinearGradient>
-    </View>
+    </Wrapper>
   );
 }
 
