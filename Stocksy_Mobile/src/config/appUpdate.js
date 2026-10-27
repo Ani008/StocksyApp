@@ -14,8 +14,8 @@ export const PLAY_STORE_PACKAGE = "com.stocksy.app";
 // WHEN THE APP GOES LIVE: set PLAY_STORE_LIVE to true. That is the only change
 // needed; the button then opens the real Play Store listing for
 // PLAY_STORE_PACKAGE.
-export const PLAY_STORE_LIVE = false;
-export const PLAY_STORE_PLACEHOLDER_URL = "https://stocksy.online";
+export const PLAY_STORE_LIVE = true;
+export const PLAY_STORE_PLACEHOLDER_URL = "https://play.google.com/store/apps/details?id=com.stocksy.app&pcampaignid=web_share";
 export const PLAY_STORE_WEB_URL = PLAY_STORE_LIVE
   ? `https://play.google.com/store/apps/details?id=${PLAY_STORE_PACKAGE}`
   : PLAY_STORE_PLACEHOLDER_URL;
