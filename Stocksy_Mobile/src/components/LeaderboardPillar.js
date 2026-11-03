@@ -119,7 +119,6 @@ export default function LeaderboardPillar({ rank, height, side = "none" }) {
 
           {/* Rank number printed on the front face. */}
           <View
-            pointerEvents="none"
             style={[
               styles.numberWrap,
               { left: frontLeft, width: frontRight - frontLeft, top: T },
@@ -138,6 +137,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     alignItems: "center",
     paddingTop: moderateScale(4),
+    pointerEvents: "none",
   },
   // Big and bold, like the reference: the number is the pillar's main graphic.
   number: {

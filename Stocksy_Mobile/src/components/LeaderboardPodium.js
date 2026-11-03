@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
+import CountUpText from "./CountUpText";
 import LeaderboardAvatar from "./LeaderboardAvatar";
+import LeaderboardGlow from "./LeaderboardGlow";
 import LeaderboardPillar from "./LeaderboardPillar";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -19,6 +21,16 @@ const PLACES = {
 // last, so the winner gets the big finish.
 const RISE_DURATION = 850;
 const RISE_DELAY = { 3: 0, 2: 220, 1: 440 };
+
+// When a column is about to land (a bit before it finishes rising): its points
+// start counting up and, for 1st, the glow fades in.
+const landDelay = (rank) => RISE_DELAY[rank] + RISE_DURATION * 0.55;
+const COUNT_DURATION = 1000;
+
+// Glow behind 1st place. The podium gets some headroom so the glow isn't cut off
+// or pushed over the toggle above.
+const GLOW_SIZE = moderateScale(210);
+const TOP_HEADROOM = moderateScale(20);
 
 function Place({ rank, entry }) {
   const look = PLACES[rank];
@@ -75,7 +87,12 @@ function Place({ rank, entry }) {
               </Text>
               <View style={styles.pointsRow}>
                 <Ionicons name="star" size={moderateScale(12)} color={Colors.warning} />
-                <Text style={styles.points}>{entry.points}</Text>
+                <CountUpText
+                  value={entry.points}
+                  delay={landDelay(rank)}
+                  duration={COUNT_DURATION}
+                  style={styles.points}
+                />
               </View>
             </>
           ) : (
@@ -101,6 +118,21 @@ export default function LeaderboardPodium({ entries = [], style }) {
 
   return (
     <View style={[styles.row, style]}>
+      {/* Drawn first so it sits behind everything. 1st is the tallest column, so
+          its avatar is at the top of the row: centre the glow on it. */}
+      {first && (
+        <LeaderboardGlow
+          size={GLOW_SIZE}
+          delay={landDelay(1)}
+          style={{
+            position: "absolute",
+            left: "50%",
+            marginLeft: -GLOW_SIZE / 2,
+            top: TOP_HEADROOM + moderateScale(PLACES[1].avatar) / 2 - GLOW_SIZE / 2,
+          }}
+        />
+      )}
+
       <Place rank={2} entry={second} />
       <Place rank={1} entry={first} />
       <Place rank={3} entry={third} />
@@ -114,6 +146,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "center",
     paddingHorizontal: moderateScale(20),
+    paddingTop: TOP_HEADROOM,
   },
   column: {
     flex: 1,

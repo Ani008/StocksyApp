@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   FlatList,
   StatusBar,
@@ -34,6 +35,23 @@ const PODIUM_SIZE = 3;
  */
 const LeaderboardPage = ({ navigation }) => {
   const [tab, setTab] = useState("friends");
+
+  // The podium animations (rise, count-up, glow) play every time this screen is
+  // opened. Changing the podium's `key` rebuilds it, which restarts them. A fresh
+  // open already plays them on first render, so the first focus is skipped;
+  // after that, every time the screen comes back into focus (e.g. returning from
+  // another screen while this one stayed mounted) they play again.
+  const [playKey, setPlayKey] = useState(0);
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
+      setPlayKey((k) => k + 1);
+    }, []),
+  );
 
   const users = MOCK_LEADERBOARD;
   const podium = users.slice(0, PODIUM_SIZE);
@@ -74,7 +92,7 @@ const LeaderboardPage = ({ navigation }) => {
         />
       </View>
 
-      <LeaderboardPodium entries={podium} style={styles.podium} />
+      <LeaderboardPodium key={playKey} entries={podium} style={styles.podium} />
 
       {/* Rank 4 onwards. Only this part scrolls; the podium stays put. */}
       <View style={styles.sheet}>
