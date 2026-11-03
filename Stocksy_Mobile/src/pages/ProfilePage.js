@@ -24,6 +24,7 @@ import authService from "../../services/authService";
 import { showToast } from "../../services/uiBridge";
 import DeleteAccountModal from "../components/DeleteAccountModal";
 import FlameIcon from "../components/FlameIcon";
+import LeaderboardIcon from "../components/LeaderboardIcon";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const APP_VERSION = "1.0.0";
@@ -171,16 +172,29 @@ const ProfilePage = ({ navigation }) => {
           <View style={styles.heroTopRow}>
             <Text style={styles.heroTitle}>Profile</Text>
 
-            <TouchableOpacity
-              style={styles.streakBtn}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate("Streak")}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel="Open your streak"
-            >
-              <FlameIcon size={moderateScale(24)} />
-            </TouchableOpacity>
+            <View style={styles.heroActions}>
+              <TouchableOpacity
+                style={styles.streakBtn}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate("Leaderboard")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Open the leaderboard"
+              >
+                <LeaderboardIcon size={moderateScale(22)} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.streakBtn}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate("Streak")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Open your streak"
+              >
+                <FlameIcon size={moderateScale(24)} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.profileRow}>
@@ -579,7 +593,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: Colors.white,
   },
-  // Round white button with the flame, opens the Streak page.
+  // Leaderboard + streak buttons, side by side on the right of the header.
+  heroActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: moderateScale(12),
+  },
+  // Round white buttons: the flame opens Streak, the podium opens Leaderboard.
   streakBtn: {
     width: moderateScale(40),
     height: moderateScale(40),
