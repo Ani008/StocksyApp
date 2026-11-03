@@ -5,6 +5,9 @@ import { Ionicons } from "@expo/vector-icons";
 import LeaderboardAvatar from "./LeaderboardAvatar";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
+const RANK_LEFT = moderateScale(6); // gap from the row's left edge to the number
+const RANK_LETTER_SPACING = -3;
+
 /**
  * One row of the leaderboard list (rank 4 and below).
  *
@@ -16,9 +19,23 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
  *   entry   { id, name, points, avatarUrl }
  */
 export default function LeaderboardRow({ rank, entry, style }) {
+  // Size the number by how many digits it has, then push the avatar far enough
+  // right that the whole number shows (nothing hides behind the avatar).
+  // 3 digits get a smaller number so the name still has room.
+  const digits = String(rank).length;
+  const numberSize = fontScale(digits >= 3 ? 64 : 86);
+  const digitWidth = numberSize * 0.6 + RANK_LETTER_SPACING;
+  const avatarLeft = RANK_LEFT + digits * digitWidth + moderateScale(12);
+
   return (
     <View style={[styles.row, style]}>
-      <Text style={styles.rank} allowFontScaling={false}>
+      <Text
+        style={[
+          styles.rank,
+          { fontSize: numberSize, lineHeight: numberSize * 1.1 },
+        ]}
+        allowFontScaling={false}
+      >
         {rank}
       </Text>
 
@@ -28,7 +45,7 @@ export default function LeaderboardRow({ rank, entry, style }) {
         avatarUrl={entry.avatarUrl}
         size={moderateScale(52)}
         borderColor={Colors.white}
-        style={styles.avatar}
+        style={{ marginLeft: avatarLeft }}
       />
 
       <View style={styles.info}>
@@ -62,17 +79,11 @@ const styles = StyleSheet.create({
   // is cut off by the row.
   rank: {
     position: "absolute",
-    left: moderateScale(6),
+    left: RANK_LEFT,
     bottom: -moderateScale(16),
-    fontSize: fontScale(86),
-    lineHeight: fontScale(96),
     fontWeight: "900",
-    letterSpacing: -3,
+    letterSpacing: RANK_LETTER_SPACING,
     color: "#E3E9F2",
-  },
-  // Leaves room for single-digit ranks; two-digit ones tuck behind the avatar.
-  avatar: {
-    marginLeft: moderateScale(62),
   },
   info: {
     flex: 1,
