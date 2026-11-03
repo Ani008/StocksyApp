@@ -9,6 +9,15 @@ const isForeignKeyViolation = (err) => err && err.code === FOREIGN_KEY_VIOLATION
 // exactly (see services/followLogic.js for why it must not go through a JS Date).
 const CURSOR_TS = `to_char(f.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
+// The username other people see: the one the person CHOSE. Until they choose,
+// users.username is still the old first-name placeholder, which is not unique
+// and must not be shown as a handle — so it comes back NULL.
+const HANDLE = `CASE WHEN u.username_set THEN u.username END`;
+
+// "Does this person match the search text ($n)?" — by name, or by chosen username.
+const nameMatches = (param) =>
+  `(u.full_name ILIKE $${param} OR (u.username_set AND u.username ILIKE $${param}))`;
+
 // The two ways to read the same table. Column names come from this fixed map,
 // never from request input, so interpolating them into SQL below is safe.
 //   followers of X → rows where X is following_id; the person listed is follower_id
@@ -32,7 +41,9 @@ const getProfile = async ({ userId, viewerId }) => {
     `
     SELECT u.id,
            u.full_name,
+           ${HANDLE} AS handle,
            u.avatar,
+           u.avatar_id,
            (SELECT COUNT(*)::int FROM follows WHERE following_id = u.id) AS followers_count,
            (SELECT COUNT(*)::int FROM follows WHERE follower_id  = u.id) AS following_count,
            EXISTS (SELECT 1 FROM follows WHERE follower_id = $2 AND following_id = u.id) AS is_following,
@@ -67,7 +78,7 @@ const listConnections = async ({ direction, targetId, viewerId, search, cursor, 
 
   if (search) {
     params.push(`%${escapeLike(search)}%`); // Postgres' default LIKE escape is a backslash
-    where += ` AND u.full_name ILIKE $${params.length}`;
+    where += ` AND ${nameMatches(params.length)}`;
   }
 
   if (cursor) {
@@ -81,7 +92,9 @@ const listConnections = async ({ direction, targetId, viewerId, search, cursor, 
     `
     SELECT u.id,
            u.full_name,
+           ${HANDLE} AS handle,
            u.avatar,
+           u.avatar_id,
            ${CURSOR_TS} AS cursor_ts,
            EXISTS (SELECT 1 FROM follows v WHERE v.follower_id = $1 AND v.following_id = u.id) AS is_following,
            EXISTS (SELECT 1 FROM follows b WHERE b.follower_id = u.id AND b.following_id = $1) AS follows_you
@@ -98,9 +111,9 @@ const listConnections = async ({ direction, targetId, viewerId, search, cursor, 
 };
 
 // "Find people to follow": everyone (except the viewer) whose name contains the
-// search text, names that START with it first. Only verified accounts — an
+// search text (or whose chosen username does), those that START with it first. Only verified accounts — an
 // unverified signup can't log in, so it isn't someone you could follow.
-// Matches on name only, never email, so this can't be used to check whether a
+// Matches on name or chosen username only, never email, so this can't be used to check whether a
 // given email address has an account.
 const searchUsers = async ({ viewerId, term, limit }) => {
   const escaped = escapeLike(term);
@@ -109,14 +122,17 @@ const searchUsers = async ({ viewerId, term, limit }) => {
     `
     SELECT u.id,
            u.full_name,
+           ${HANDLE} AS handle,
            u.avatar,
+           u.avatar_id,
            EXISTS (SELECT 1 FROM follows v WHERE v.follower_id = $1 AND v.following_id = u.id) AS is_following,
            EXISTS (SELECT 1 FROM follows b WHERE b.follower_id = u.id AND b.following_id = $1) AS follows_you
     FROM users u
     WHERE u.id <> $1
       AND u.email_verified = TRUE
-      AND u.full_name ILIKE $2
-    ORDER BY (u.full_name ILIKE $3) DESC, LOWER(u.full_name) ASC, u.id ASC
+      AND ${nameMatches(2)}
+    ORDER BY (u.full_name ILIKE $3 OR (u.username_set AND u.username ILIKE $3)) DESC,
+             LOWER(u.full_name) ASC, u.id ASC
     LIMIT $4
     `,
     [viewerId, `%${escaped}%`, `${escaped}%`, limit],

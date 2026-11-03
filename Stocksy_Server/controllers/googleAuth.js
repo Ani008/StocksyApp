@@ -68,13 +68,17 @@ const createOrUpdateGoogleUser = async (payload, attempt = 0) => {
     const linked = await pool.query(`SELECT * FROM users WHERE google_id = $1`, [googleId]);
     let user = linked.rows[0];
 
+    // Only the Google profile photo URL is refreshed on a repeat login. The
+    // name and username are NOT copied from Google again: the person can edit
+    // them in the app (and may have chosen a unique username), and a login
+    // must never undo that.
     if (user) {
       const updated = await pool.query(
         `UPDATE users
-            SET full_name = $1, username = $2, avatar = $3
-          WHERE id = $4
+            SET avatar = $1
+          WHERE id = $2
       RETURNING *`,
-        [safeFullName, username, avatar, user.id],
+        [avatar, user.id],
       );
       return updated.rows[0];
     }
@@ -92,13 +96,15 @@ const createOrUpdateGoogleUser = async (payload, attempt = 0) => {
         );
       }
 
+      // An existing, confirmed account keeps its own name and username when
+      // Google is linked to it.
       if (user.email_verified) {
         const linkedNow = await pool.query(
           `UPDATE users
-              SET full_name = $1, username = $2, google_id = $3, avatar = $4
-            WHERE id = $5
+              SET google_id = $1, avatar = $2
+            WHERE id = $3
         RETURNING *`,
-          [safeFullName, username, googleId, avatar, user.id],
+          [googleId, avatar, user.id],
         );
         return linkedNow.rows[0];
       }
@@ -112,6 +118,8 @@ const createOrUpdateGoogleUser = async (payload, attempt = 0) => {
                 avatar         = $4,
                 password       = '',
                 email_verified = TRUE,
+                username_set   = FALSE,
+                signup_username = NULL,
                 updated_at     = NOW()
           WHERE id = $5 AND email_verified = FALSE
       RETURNING *`,
