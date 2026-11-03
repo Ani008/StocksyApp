@@ -7,6 +7,11 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const RANK_LEFT = moderateScale(6); // gap from the row's left edge to the number
 const RANK_LETTER_SPACING = -3;
+const MAX_RANK_SIZE = 86; // size used for single-digit ranks
+const DIGIT_RATIO = 0.68; // how wide a black-weight digit is, relative to its font size (measured on web)
+const AVATAR_LEFT = moderateScale(84); // where the avatar starts, the same in every row
+// Space the number may use: from the row edge up to a small gap before the avatar.
+const SLOT_WIDTH = AVATAR_LEFT - RANK_LEFT - moderateScale(8);
 
 /**
  * One row of the leaderboard list (rank 4 and below).
@@ -19,20 +24,23 @@ const RANK_LETTER_SPACING = -3;
  *   entry   { id, name, points, avatarUrl }
  */
 export default function LeaderboardRow({ rank, entry, style }) {
-  // Size the number by how many digits it has, then push the avatar far enough
-  // right that the whole number shows (nothing hides behind the avatar).
-  // 3 digits get a smaller number so the name still has room.
+  // Every row has the same fixed slot for the number, so avatars, names and
+  // points line up in a column. The number shrinks to fit the slot: 1 digit
+  // stays at full size, 2 and 3 digits get smaller (never hidden or overlapped).
   const digits = String(rank).length;
-  const numberSize = fontScale(digits >= 3 ? 64 : 86);
-  const digitWidth = numberSize * 0.6 + RANK_LETTER_SPACING;
-  const avatarLeft = RANK_LEFT + digits * digitWidth + moderateScale(12);
+  const fitted = (SLOT_WIDTH / digits - RANK_LETTER_SPACING) / DIGIT_RATIO;
+  const numberSize = fontScale(Math.min(MAX_RANK_SIZE, fitted));
 
   return (
     <View style={[styles.row, style]}>
       <Text
         style={[
           styles.rank,
-          { fontSize: numberSize, lineHeight: numberSize * 1.1 },
+          {
+            fontSize: numberSize,
+            lineHeight: numberSize * 1.1,
+            bottom: -numberSize * 0.19,
+          },
         ]}
         allowFontScaling={false}
       >
@@ -45,7 +53,7 @@ export default function LeaderboardRow({ rank, entry, style }) {
         avatarUrl={entry.avatarUrl}
         size={moderateScale(52)}
         borderColor={Colors.white}
-        style={{ marginLeft: avatarLeft }}
+        style={styles.avatar}
       />
 
       <View style={styles.info}>
@@ -80,10 +88,12 @@ const styles = StyleSheet.create({
   rank: {
     position: "absolute",
     left: RANK_LEFT,
-    bottom: -moderateScale(16),
     fontWeight: "900",
     letterSpacing: RANK_LETTER_SPACING,
     color: "#E3E9F2",
+  },
+  avatar: {
+    marginLeft: AVATAR_LEFT,
   },
   info: {
     flex: 1,
