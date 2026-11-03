@@ -1,5 +1,5 @@
-import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import LeaderboardAvatar from "./LeaderboardAvatar";
@@ -14,35 +14,78 @@ const PLACES = {
   3: { height: 100, avatar: 54, side: "right" },
 };
 
+// Entrance animation: each column (pillar plus the person standing on it) slides
+// up from the bottom edge of the podium. 3rd rises first, then 2nd, then 1st
+// last, so the winner gets the big finish.
+const RISE_DURATION = 850;
+const RISE_DELAY = { 3: 0, 2: 220, 1: 440 };
+
 function Place({ rank, entry }) {
   const look = PLACES[rank];
 
+  // 0 = still below the podium, 1 = standing in place.
+  const progress = useRef(new Animated.Value(0)).current;
+  // Height of the column, measured so it starts exactly out of view.
+  const [contentHeight, setContentHeight] = useState(0);
+
+  // Start once the height is known (a rise from an unknown height would jump).
+  useEffect(() => {
+    if (!contentHeight) return undefined;
+    const animation = Animated.timing(progress, {
+      toValue: 1,
+      duration: RISE_DURATION,
+      delay: RISE_DELAY[rank],
+      easing: Easing.bezier(0.22, 1, 0.36, 1), // quick start, soft landing
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [contentHeight, progress, rank]);
+
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [contentHeight, 0],
+  });
+  const opacity = progress.interpolate({
+    inputRange: [0, 0.25, 1],
+    outputRange: [0, 1, 1],
+  });
+
   return (
     <View style={styles.column}>
-      {entry ? (
-        <>
-          <LeaderboardAvatar
-            id={entry.id}
-            name={entry.name}
-            avatarUrl={entry.avatarUrl}
-            size={moderateScale(look.avatar)}
-            borderColor={Colors.white}
-          />
+      {/* Clips the column at the podium's bottom edge while it rises, so it
+          looks like it comes up out of the floor instead of sliding over the list. */}
+      <View style={styles.clip}>
+        <Animated.View
+          style={[styles.rise, { opacity, transform: [{ translateY }] }]}
+          onLayout={(e) => setContentHeight(e.nativeEvent.layout.height)}
+        >
+          {entry ? (
+            <>
+              <LeaderboardAvatar
+                id={entry.id}
+                name={entry.name}
+                avatarUrl={entry.avatarUrl}
+                size={moderateScale(look.avatar)}
+                borderColor={Colors.white}
+              />
 
-          <Text style={styles.name} numberOfLines={1}>
-            {entry.name}
-          </Text>
-          <View style={styles.pointsRow}>
-            <Ionicons name="star" size={moderateScale(12)} color={Colors.warning} />
-            <Text style={styles.points}>{entry.points}</Text>
-          </View>
-        </>
-      ) : (
-        // Fewer than 3 users: keep the column so the pillars stay in place.
-        <View style={{ height: moderateScale(look.avatar) }} />
-      )}
+              <Text style={styles.name} numberOfLines={1}>
+                {entry.name}
+              </Text>
+              <View style={styles.pointsRow}>
+                <Ionicons name="star" size={moderateScale(12)} color={Colors.warning} />
+                <Text style={styles.points}>{entry.points}</Text>
+              </View>
+            </>
+          ) : (
+            // Fewer than 3 users: keep the column so the pillars stay in place.
+            <View style={{ height: moderateScale(look.avatar) }} />
+          )}
 
-      <LeaderboardPillar rank={rank} height={look.height} side={look.side} />
+          <LeaderboardPillar rank={rank} height={look.height} side={look.side} />
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -76,6 +119,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     marginHorizontal: moderateScale(4),
+  },
+  clip: {
+    width: "100%",
+    overflow: "hidden",
+  },
+  rise: {
+    width: "100%",
+    alignItems: "center",
   },
   name: {
     marginTop: moderateScale(6),
