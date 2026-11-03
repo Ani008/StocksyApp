@@ -1,29 +1,30 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
 import LeaderboardAvatar from "./LeaderboardAvatar";
+import LeaderboardPillar from "./LeaderboardPillar";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
-// Per-rank look. Pillar height is what makes 1st stand tallest.
+// Per-rank look. Pillar height is what makes 1st stand tallest; `side` is which
+// side face the 3D pillar shows (the outer two lean away from the middle).
 const PLACES = {
   1: {
     height: 150,
     avatar: 64,
-    colors: [Colors.primaryAccent, Colors.primaryDark],
+    side: "none",
     badge: "#F5B301", // gold
   },
   2: {
     height: 112,
     avatar: 54,
-    colors: ["#93C5FD", Colors.primary],
+    side: "left",
     badge: "#A8B0BC", // silver
   },
   3: {
     height: 88,
     avatar: 54,
-    colors: ["#BFDBFE", Colors.primaryAccent],
+    side: "right",
     badge: "#CD7F32", // bronze
   },
 };
@@ -61,12 +62,7 @@ function Place({ rank, entry }) {
         <View style={{ height: moderateScale(look.avatar) }} />
       )}
 
-      <LinearGradient
-        colors={look.colors}
-        style={[styles.pillar, { height: moderateScale(look.height) }]}
-      >
-        <Text style={styles.pillarRank}>{rank}</Text>
-      </LinearGradient>
+      <LeaderboardPillar rank={rank} height={look.height} side={look.side} />
     </View>
   );
 }
@@ -136,17 +132,5 @@ const styles = StyleSheet.create({
     fontSize: fontScale(Typography.small),
     fontWeight: "700",
     color: Colors.textSecondary,
-  },
-  pillar: {
-    width: "100%",
-    alignItems: "center",
-    paddingTop: moderateScale(10),
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-  },
-  pillarRank: {
-    fontSize: fontScale(34),
-    fontWeight: "900",
-    color: "rgba(255,255,255,0.85)",
   },
 });
