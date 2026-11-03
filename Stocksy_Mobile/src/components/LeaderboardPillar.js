@@ -137,14 +137,16 @@ const styles = StyleSheet.create({
   numberWrap: {
     position: "absolute",
     alignItems: "center",
-    paddingTop: moderateScale(8),
+    paddingTop: moderateScale(4),
   },
+  // Big and bold, like the reference: the number is the pillar's main graphic.
   number: {
-    fontSize: fontScale(38),
+    fontSize: fontScale(64),
+    lineHeight: fontScale(70),
     fontWeight: "900",
-    color: "rgba(255,255,255,0.92)",
+    color: "rgba(255,255,255,0.9)",
     textShadowColor: "rgba(15,40,120,0.35)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 5,
   },
 });

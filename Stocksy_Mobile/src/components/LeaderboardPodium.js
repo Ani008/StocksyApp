@@ -9,24 +9,9 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
 // Per-rank look. Pillar height is what makes 1st stand tallest; `side` is which
 // side face the 3D pillar shows (the outer two lean away from the middle).
 const PLACES = {
-  1: {
-    height: 150,
-    avatar: 64,
-    side: "none",
-    badge: "#F5B301", // gold
-  },
-  2: {
-    height: 112,
-    avatar: 54,
-    side: "left",
-    badge: "#A8B0BC", // silver
-  },
-  3: {
-    height: 88,
-    avatar: 54,
-    side: "right",
-    badge: "#CD7F32", // bronze
-  },
+  1: { height: 160, avatar: 64, side: "none" },
+  2: { height: 126, avatar: 54, side: "left" },
+  3: { height: 100, avatar: 54, side: "right" },
 };
 
 function Place({ rank, entry }) {
@@ -36,18 +21,13 @@ function Place({ rank, entry }) {
     <View style={styles.column}>
       {entry ? (
         <>
-          <View>
-            <LeaderboardAvatar
-              id={entry.id}
-              name={entry.name}
-              avatarUrl={entry.avatarUrl}
-              size={moderateScale(look.avatar)}
-              borderColor={look.badge}
-            />
-            <View style={[styles.badge, { backgroundColor: look.badge }]}>
-              <Text style={styles.badgeText}>{rank}</Text>
-            </View>
-          </View>
+          <LeaderboardAvatar
+            id={entry.id}
+            name={entry.name}
+            avatarUrl={entry.avatarUrl}
+            size={moderateScale(look.avatar)}
+            borderColor={Colors.white}
+          />
 
           <Text style={styles.name} numberOfLines={1}>
             {entry.name}
@@ -96,23 +76,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     marginHorizontal: moderateScale(4),
-  },
-  badge: {
-    position: "absolute",
-    top: -moderateScale(2),
-    right: -moderateScale(2),
-    width: moderateScale(20),
-    height: moderateScale(20),
-    borderRadius: moderateScale(10),
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: Colors.white,
-  },
-  badgeText: {
-    color: Colors.white,
-    fontSize: fontScale(Typography.tiny),
-    fontWeight: "800",
   },
   name: {
     marginTop: moderateScale(6),
