@@ -15,7 +15,7 @@
 // automatically if Redis is briefly unavailable, so a Redis blip degrades
 // gracefully instead of taking the API down.
 
-const { rateLimit } = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const { client: redisClient } = require('../config/redis');
 
@@ -99,4 +99,37 @@ const orderLimiter = rateLimit({
   store: makeRedisStore('rl:order:'),
 });
 
-module.exports = { generalLimiter, authLimiter, otpLimiter, orderLimiter };
+// ── Social limiters (follow / unfollow, find people) ────────────────────────
+// These routes sit behind `protect`, so the budget is counted PER LOGGED-IN
+// USER, not per IP. Per-IP would be wrong here: a whole college campus (or a
+// workshop full of students) shares one public IP, and they would all drain
+// one shared budget. Falls back to the IP if no user is attached.
+const perUserKey = (req) => (req.user?.id ? `u:${req.user.id}` : ipKeyGenerator(req.ip));
+
+// Follow / unfollow. Blunts scripted follow-spam without bothering anyone
+// tapping through a list.
+const followLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 1000, // 1 min
+  max: 40,
+  keyGenerator: perUserKey,
+  store: makeRedisStore('rl:follow:'),
+});
+
+// Find-people search. Higher, because the app searches as you type.
+const userSearchLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 1000, // 1 min
+  max: 120,
+  keyGenerator: perUserKey,
+  store: makeRedisStore('rl:usersearch:'),
+});
+
+module.exports = {
+  generalLimiter,
+  authLimiter,
+  otpLimiter,
+  orderLimiter,
+  followLimiter,
+  userSearchLimiter,
+};
