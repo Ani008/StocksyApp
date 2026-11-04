@@ -12,9 +12,11 @@ import {
 import Svg, { Path } from "react-native-svg";
 import Button from "../components/Button";
 import Input from "../components/Input";
+import UsernameField from "../components/UsernameField";
 import PrivacyConsentModal from "../components/PrivacyConsentModal";
 import authService from "../../services/authService";
 import usePrivacyConsent from "../hooks/usePrivacyConsent";
+import useUsernameCheck from "../hooks/useUsernameCheck";
 
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -24,6 +26,7 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const SignupPage = ({ navigation }) => {
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -38,9 +41,13 @@ const SignupPage = ({ navigation }) => {
 
   const [pendingAction, setPendingAction] = useState(null); // 'email' | 'google'
 
+  // Live "is this username free?" under the username field.
+  const usernameCheck = useUsernameCheck(username);
+
   const validate = () => {
     const newErrors = {};
     if (!name.trim()) newErrors.name = "Name is required";
+    if (!username.trim()) newErrors.username = "Username is required";
     if (!email.trim()) newErrors.email = "Email is required";
     else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Invalid email";
     if (!password) newErrors.password = "Password is required";
@@ -75,6 +82,7 @@ const SignupPage = ({ navigation }) => {
     try {
       const result = await authService.signup({
         fullName: name,
+        username: username.trim(),
         email,
         password,
       });
@@ -85,7 +93,14 @@ const SignupPage = ({ navigation }) => {
         navigation.replace("MainTabs");
       }
     } catch (err) {
-      // No Alert here — the global toast already covers this.
+      // No Alert here — the global toast already covers this. The username is
+      // also marked on its field, since someone may have taken it in the
+      // seconds since it was checked.
+      const code = err?.response?.data?.code;
+      if (code === "USERNAME_TAKEN") usernameCheck.markTaken();
+      else if (code === "INVALID_USERNAME") {
+        setErrors((e) => ({ ...e, username: err.response.data.message }));
+      }
     } finally {
       setLoading(false);
     }
@@ -120,8 +135,12 @@ const SignupPage = ({ navigation }) => {
     setConsentModalVisible(true);
   };
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     if (!validate()) return;
+    // The username must be confirmed free for exactly what is in the box now
+    // (checks the moment you press Create if the live check hasn't caught up).
+    // The reason, if not, is already showing under the field.
+    if (!(await usernameCheck.ensureChecked())) return;
     requireConsentThen("email", doEmailSignup);
   };
 
@@ -168,6 +187,16 @@ const SignupPage = ({ navigation }) => {
               placeholder="Enter Your Name"
               autoCapitalize="words"
               error={errors.name}
+            />
+            <UsernameField
+              value={username}
+              onChangeText={(v) => {
+                setUsername(v);
+                if (errors.username) setErrors((e) => ({ ...e, username: undefined }));
+              }}
+              status={usernameCheck.status}
+              message={usernameCheck.message}
+              error={errors.username}
             />
             <Input
               label="Email Address"

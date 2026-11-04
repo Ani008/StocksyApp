@@ -18,7 +18,11 @@ export async function resolve(specifier, context, next) {
   if (STUBBED[specifier]) return { url: STUBBED[specifier], shortCircuit: true };
   // services/orderService.js talks to ./api (an axios instance); tests only
   // need to see what it sends.
-  if (specifier === "./api" && context.parentURL?.endsWith("/services/orderService.js")) {
+  if (
+    specifier === "./api" &&
+    (context.parentURL?.endsWith("/services/orderService.js") ||
+      context.parentURL?.endsWith("/services/profileService.js"))
+  ) {
     return { url: `${stubs}?m=api`, shortCircuit: true };
   }
   if (specifier.endsWith("src/config/env")) {

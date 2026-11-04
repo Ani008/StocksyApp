@@ -30,6 +30,7 @@ const apiStub = {
   post: (...a) => axiosPost(...a),
   get: async (url, config) => { state.posts.push({ method: "get", url, config }); return state.responder(url, undefined, config); },
   delete: async (url, config) => { state.posts.push({ method: "delete", url, config }); return state.responder(url, undefined, config); },
+  patch: async (url, body, config) => { state.posts.push({ method: "patch", url, body, config }); return state.responder(url, body, config); },
 };
 export default mode === "async" ? asyncStorage : mode === "api" ? apiStub : { post: (...a) => axiosPost(...a) };
 
