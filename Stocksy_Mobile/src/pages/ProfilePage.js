@@ -222,7 +222,7 @@ const ProfilePage = ({ navigation }) => {
 
               {!!username && (
                 <Text style={styles.username} numberOfLines={1}>
-                  @{username}
+                  {username}
                 </Text>
               )}
             </View>
