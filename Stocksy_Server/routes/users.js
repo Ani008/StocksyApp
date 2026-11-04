@@ -10,7 +10,8 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { followLimiter, userSearchLimiter } = require("../middleware/rateLimiter");
+const { followLimiter, userSearchLimiter, profileLimiter } = require("../middleware/rateLimiter");
+const { updateMyProfileHandler } = require("../controllers/profileController");
 const {
   getProfileHandler,
   followHandler,
@@ -20,8 +21,9 @@ const {
   searchUsersHandler,
 } = require("../controllers/followController");
 
-// GET    /api/users/search?q=&limit=            — find people to follow (name match; q needs 2+ characters)
-// GET    /api/users/:id                         — profile: name, avatar, followers/following counts, isFollowing
+// PATCH  /api/users/me                          — edit your own profile: { fullName?, username?, avatarId? } (never email)
+// GET    /api/users/search?q=&limit=            — find people to follow (name or username; q needs 2+ characters)
+// GET    /api/users/:id                         — profile: name, username, avatar, followers/following counts, isFollowing
 // POST   /api/users/:id/follow                  — follow them
 // DELETE /api/users/:id/follow                  — unfollow them
 // GET    /api/users/:id/followers?q=&limit=&cursor= — their followers, newest first (q filters by name)
@@ -31,6 +33,7 @@ const {
 // ?cursor= for the next page; null means that was the last page.
 //
 // "search" must be registered before "/:id" or it would be read as a user id.
+router.patch("/me", protect, profileLimiter, updateMyProfileHandler);
 router.get("/search", protect, userSearchLimiter, searchUsersHandler);
 router.get("/:id", protect, getProfileHandler);
 router.post("/:id/follow", protect, followLimiter, followHandler);

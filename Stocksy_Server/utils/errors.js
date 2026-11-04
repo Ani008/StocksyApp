@@ -29,6 +29,16 @@ class NotFoundError extends Error {
 class UnauthorizedError extends Error {
   constructor(message) { super(message || 'Not authorized'); this.name = 'UnauthorizedError'; }
 }
+class ConflictError extends Error {
+  // The request is fine but clashes with what already exists (e.g. a username
+  // that is taken). `code` lets the app show the message next to the right
+  // field instead of parsing English.
+  constructor(message, code = 'CONFLICT') {
+    super(message);
+    this.name = 'ConflictError';
+    this.code = code;
+  }
+}
 class IdempotencyConflictError extends Error {
   // The same Idempotency-Key was reused for a DIFFERENT order than the one it
   // first created. Never silently place or replay anything in that case.
@@ -77,6 +87,9 @@ function mapErrorToResponse(err) {
   if (err instanceof NotFoundError)
     return { status: 404, body: { message: err.message, code: 'NOT_FOUND', severity: 'error' } };
 
+  if (err instanceof ConflictError)
+    return { status: 409, body: { message: err.message, code: err.code, severity: 'error' } };
+
   if (err instanceof UnauthorizedError)
     return { status: 401, body: { message: err.message, code: 'UNAUTHORIZED', severity: 'error' } };
 
@@ -109,6 +122,7 @@ module.exports = {
   MarketClosedError,
   NotFoundError,
   UnauthorizedError,
+  ConflictError,
   SessionExpiredError,
   IdempotencyConflictError,
   mapErrorToResponse,

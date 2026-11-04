@@ -84,7 +84,9 @@ const decodeCursor = (raw) => {
 const serializeUser = (row, viewerId) => ({
   id: row.id,
   fullName: row.full_name,
-  avatar: row.avatar ?? "",
+  username: row.handle ?? null, // their chosen username; null until they choose one
+  avatar: row.avatar ?? "", // Google profile photo URL, if any
+  avatarId: row.avatar_id ?? null, // the avatar they picked from config/avatars.js
   isSelf: row.id === viewerId, // the app hides the Follow button on your own row
   isFollowing: Boolean(row.is_following), // you follow them
   followsYou: Boolean(row.follows_you), // they follow you ("Follow back")

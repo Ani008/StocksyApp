@@ -29,6 +29,7 @@ const { EventEmitter } = require("events");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../config/postgres");
 const logger = require("../utils/logger");
+const { serializeAccount } = require("./profileLogic");
 
 const events = new EventEmitter();
 
@@ -80,8 +81,8 @@ function verifyAccessToken(token, { ignoreExpiration = false } = {}) {
 /** The user row for a verified token, or null if the session is not active. */
 async function findActiveUser(decoded) {
   const result = await pool.query(
-    `SELECT u.id, u.full_name, u.username, u.email, u.provider, u.google_id,
-            u.avatar, u.demo_balance
+    `SELECT u.id, u.full_name, u.username, u.username_set, u.email, u.provider, u.google_id,
+            u.avatar, u.avatar_id, u.demo_balance
        FROM users u
        JOIN auth_sessions s ON s.user_id = u.id
       WHERE u.id = $1
@@ -189,7 +190,8 @@ async function rotateRefreshToken(rawToken) {
 
   const session = await pool.query(
     `SELECT s.id, s.user_id, s.expires_at,
-            u.full_name, u.username, u.email, u.provider, u.avatar, u.demo_balance
+            u.full_name, u.username, u.username_set, u.email, u.provider, u.avatar,
+            u.avatar_id, u.demo_balance
        FROM auth_sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW()`,
@@ -205,14 +207,9 @@ async function rotateRefreshToken(rawToken) {
     refreshToken: await insertRefreshToken(s.id, s.expires_at),
     expiresIn: ttl,
     refreshExpiresAt: s.expires_at,
-    user: {
-      id: s.user_id,
-      username: s.username,
-      fullName: s.full_name,
-      email: s.email,
-      avatar: s.avatar,
-      demoBalance: s.demo_balance,
-    },
+    // Same shape as the login response (services/profileLogic.js), so a token
+    // refresh can't hand the app a user object missing usernameSet / avatarId.
+    user: serializeAccount({ ...s, id: s.user_id }),
   };
 }
 

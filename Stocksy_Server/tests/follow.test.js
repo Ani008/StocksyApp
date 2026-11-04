@@ -130,12 +130,20 @@ test('serializeUser exposes only the public fields', () => {
   assert.deepEqual(out, {
     id: ID_B,
     fullName: 'Riya Sharma',
+    username: null, // no chosen username on this row
     avatar: 'https://example.com/a.png',
+    avatarId: null,
     isSelf: false,
     isFollowing: true,
     followsYou: false,
   });
   assert.equal(JSON.stringify(out).includes('riya@example.com'), false);
+});
+
+test('serializeUser shows the chosen username and picked avatar', () => {
+  const out = L.serializeUser(row({ handle: 'riya_s', avatar_id: 'female_3' }), ID_A);
+  assert.equal(out.username, 'riya_s');
+  assert.equal(out.avatarId, 'female_3');
 });
 
 test('serializeUser: isSelf, missing avatar and flag coercion', () => {

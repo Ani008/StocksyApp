@@ -96,6 +96,7 @@ app.use("/api/journal", require("./routes/journal"));
 app.use("/api/alerts", require("./routes/alerts"));
 app.use("/api/watchlists", require("./routes/watchlists"));
 app.use("/api/users", require("./routes/users"));
+app.use("/api/avatars", require("./routes/avatars"));
 app.use("/api/push", require("./routes/push"));
 app.use("/api/predictions", require("./routes/predictions"));
 app.use("/api/streak", require("./routes/streak"));

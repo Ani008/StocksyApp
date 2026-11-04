@@ -36,6 +36,24 @@ const clearToken = async () => {
   marketSocket.resetIdentity();
 };
 
+// The signed-in user, kept in storage for the screens that read it (Dashboard,
+// Profile, streak, ...). One place decides what is cached so the four login
+// paths cannot drift apart. usernameSet / avatarId say whether the person has
+// chosen a username and an avatar yet.
+const cacheUser = (data) =>
+  AsyncStorage.setItem(
+    "user",
+    JSON.stringify({
+      id: data.id,
+      username: data.username,
+      usernameSet: Boolean(data.usernameSet),
+      fullName: data.fullName,
+      email: data.email,
+      avatar: data.avatar,
+      avatarId: data.avatarId ?? null,
+    }),
+  );
+
 // Google login/signup hit a separate backend route (/auth/google) and
 // were, until now, persisting their session with SecureStore instead of
 // AsyncStorage — a different storage backend than the one getStoredToken()
@@ -45,26 +63,19 @@ const clearToken = async () => {
 // auth persist through the exact same path as email/password auth.
 export const persistGoogleSession = async (data) => {
   await storeSession(data);
-
-  await AsyncStorage.setItem(
-    "user",
-    JSON.stringify({
-      id: data.id,
-      username: data.username,
-      fullName: data.fullName,
-      email: data.email,
-      avatar: data.avatar,
-    }),
-  );
+  await cacheUser(data);
 };
 
 // ─── Auth calls ───────────────────────────────────────────────────────────────
 
-const signup = async ({ fullName, email, password }) => {
+const signup = async ({ fullName, email, password, username }) => {
   const response = await api.post("/auth/signup", {
     fullName,
     email,
     password,
+    // The username picked on the signup screen. It only becomes the real
+    // username once the e-mail is confirmed (the server holds it until then).
+    ...(username ? { username } : {}),
   });
 
   // The server no longer logs anyone in at signup: it e-mails a code first.
@@ -77,16 +88,7 @@ const signup = async ({ fullName, email, password }) => {
 
   // Older server without email verification: sign in straight away.
   await storeSession(response.data);
-
-  await AsyncStorage.setItem(
-    "user",
-    JSON.stringify({
-      id: response.data.id,
-      username: response.data.username,
-      fullName: response.data.fullName,
-      email: response.data.email,
-    }),
-  );
+  await cacheUser(response.data);
 
   return response.data;
 };
@@ -105,16 +107,7 @@ export const login = async (email, password) => {
   }
 
   await storeSession(response.data);
-
-  await AsyncStorage.setItem(
-    "user",
-    JSON.stringify({
-      id: response.data.id,
-      username: response.data.username,
-      fullName: response.data.fullName,
-      email: response.data.email,
-    }),
-  );
+  await cacheUser(response.data);
 
   return response.data;
 };
@@ -125,17 +118,7 @@ export const verifyEmail = async ({ email, code, password }) => {
   const response = await api.post("/auth/verify-email", { email, code, password });
 
   await storeSession(response.data);
-
-  await AsyncStorage.setItem(
-    "user",
-    JSON.stringify({
-      id: response.data.id,
-      username: response.data.username,
-      fullName: response.data.fullName,
-      email: response.data.email,
-      avatar: response.data.avatar,
-    }),
-  );
+  await cacheUser(response.data);
 
   clearPendingCredentials();
   return response.data;

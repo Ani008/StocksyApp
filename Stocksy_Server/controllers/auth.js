@@ -22,6 +22,8 @@ const {
   clearRefreshCookie,
 } = require("../utils/authCookies");
 const { sendError, sessionExpired } = require("../utils/authErrors");
+const { checkUsername } = require("../services/profileLogic");
+const { isUsernameTaken, isUsernameTakenError } = require("../repositories/profileRepository");
 
 const MAX_NAME_LENGTH = 150; // users.full_name is VARCHAR(150)
 const MAX_PASSWORD_INPUT = 1024; // sanity bound on what we are willing to hash/compare
@@ -97,9 +99,27 @@ const signupUser = async (req, res) => {
     return sendError(res, 400, policy.message, "WEAK_PASSWORD");
   }
 
+  // users.username keeps its old value (the first word of the name) because the
+  // app still shows it as "Hi, <name>" until a real one is chosen.
   const username = name.split(/\s+/)[0].slice(0, 50);
 
+  // The username typed on the signup screen. Optional here only so app builds
+  // from before this field existed can still sign up; they are asked to choose
+  // one after their first login instead. It is checked now so the person gets
+  // an instant answer, but it is only SAVED as their username once the email is
+  // confirmed (see verifyEmail) — an unconfirmed signup reserves nothing.
+  let chosenUsername = null;
+  if (req.body?.username !== undefined && req.body?.username !== null && req.body?.username !== "") {
+    const checked = checkUsername(req.body.username);
+    if (!checked.ok) return sendError(res, 400, checked.message, "INVALID_USERNAME");
+    chosenUsername = checked.username;
+  }
+
   try {
+    if (chosenUsername && (await isUsernameTaken(chosenUsername))) {
+      return sendError(res, 409, "That username is already taken.", "USERNAME_TAKEN");
+    }
+
     // Hash first so the time taken does not depend on whether the email exists.
     const hashedPassword = await hashPassword(password);
 
@@ -130,10 +150,10 @@ const signupUser = async (req, res) => {
 
     console.log("[SIGNUP] Creating new user...");
     const created = await pool.query(
-      `INSERT INTO users (full_name, username, email, password, email_verified)
-       VALUES ($1, $2, $3, $4, FALSE)
+      `INSERT INTO users (full_name, username, email, password, email_verified, signup_username)
+       VALUES ($1, $2, $3, $4, FALSE, $5)
        RETURNING id, full_name, email`,
-      [name, username, email, hashedPassword],
+      [name, username, email, hashedPassword, chosenUsername],
     );
 
     const user = created.rows[0];
@@ -180,7 +200,7 @@ const verifyEmail = async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, password, email_verified FROM users WHERE lower(email) = $1`,
+      `SELECT id, full_name, email, password, email_verified, signup_username FROM users WHERE lower(email) = $1`,
       [email],
     );
     const user = result.rows[0];
@@ -205,15 +225,31 @@ const verifyEmail = async (req, res) => {
       return invalidCode(res); // lost a race with another request using the same code
     }
 
-    const updated = await pool.query(
-      `UPDATE users
-          SET email_verified = TRUE,
-              password       = COALESCE($2, password),
-              updated_at     = NOW()
-        WHERE id = $1 AND email_verified = FALSE
-    RETURNING *`,
-      [user.id, newHash],
-    );
+    // The email is confirmed, so the username typed at signup becomes the real
+    // one — unless someone else confirmed the same username first. Never let
+    // that block the confirmation: the account is confirmed without it and the
+    // app asks the person to choose again (usernameSet stays false).
+    const confirm = (username) =>
+      pool.query(
+        `UPDATE users
+            SET email_verified  = TRUE,
+                password        = COALESCE($2, password),
+                username        = COALESCE($3, username),
+                username_set    = ($3::text IS NOT NULL),
+                signup_username = NULL,
+                updated_at      = NOW()
+          WHERE id = $1 AND email_verified = FALSE
+      RETURNING *`,
+        [user.id, newHash, username],
+      );
+
+    let updated;
+    try {
+      updated = await confirm(user.signup_username);
+    } catch (error) {
+      if (!user.signup_username || !isUsernameTakenError(error)) throw error;
+      updated = await confirm(null);
+    }
     if (updated.rows.length === 0) return invalidCode(res);
 
     // Nothing logged in before the mailbox was proven may stay logged in.

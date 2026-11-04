@@ -125,6 +125,24 @@ const userSearchLimiter = rateLimit({
   store: makeRedisStore('rl:usersearch:'),
 });
 
+// Edit profile (name / username / avatar). Per user, like the social limiters.
+const profileLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 1000, // 1 min
+  max: 20,
+  keyGenerator: perUserKey,
+  store: makeRedisStore('rl:profile:'),
+});
+
+// "Is this username free?" — used on the signup screen, BEFORE login, so this
+// one can only count per IP. Generous because the app checks as you type.
+const usernameCheckLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 1000, // 1 min
+  max: 60,
+  store: makeRedisStore('rl:usernamecheck:'),
+});
+
 module.exports = {
   generalLimiter,
   authLimiter,
@@ -132,4 +150,6 @@ module.exports = {
   orderLimiter,
   followLimiter,
   userSearchLimiter,
+  profileLimiter,
+  usernameCheckLimiter,
 };

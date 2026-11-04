@@ -44,6 +44,7 @@ import { UPDATE_STATUS } from "./src/utils/appUpdate";
 import SplashVideoScreen from "./src/components/SplashVideoScreen";
 import SplashStaticScreen from "./src/components/SplashStaticScreen";
 import PwaUpdateBar from "./src/components/PwaUpdateBar";
+import ProfileSetupGate from "./src/components/ProfileSetupGate";
 import WebFrame from "./src/components/WebFrame";
 import { PwaProvider } from "./src/context/PwaProvider";
 import { registerSessionExpiredHandler } from "./services/uiBridge";
@@ -105,6 +106,7 @@ function MainTabs() {
   const insets = useSafeAreaInsets();
 
   return (
+    <>
     <Tab.Navigator
       initialRouteName="Home"
       screenOptions={({ route }) => ({
@@ -151,6 +153,9 @@ function MainTabs() {
       <Tab.Screen name="Markets" component={MarketPage} />
       <Tab.Screen name="Profile" component={ProfilePage} />
     </Tab.Navigator>
+    {/* Asks for a username / avatar if the person hasn't chosen them yet. */}
+    <ProfileSetupGate />
+    </>
   );
 }
 
