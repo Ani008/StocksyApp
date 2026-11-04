@@ -21,7 +21,9 @@ import {
 import { StatusBar } from "expo-status-bar";
 
 import authService from "../../services/authService";
+import { getMyProfile } from "../../services/profileService";
 import { showToast } from "../../services/uiBridge";
+import AvatarBadge from "../components/AvatarBadge";
 import DeleteAccountModal from "../components/DeleteAccountModal";
 import FlameIcon from "../components/FlameIcon";
 import LeaderboardIcon from "../components/LeaderboardIcon";
@@ -29,13 +31,6 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const APP_VERSION = "1.0.0";
 const SUPPORT_EMAIL = "support@stocksy.online";
-
-const getInitials = (name) => {
-  if (!name) return "T";
-  const parts = name.trim().split(/\s+/);
-  const initials = parts.length > 1 ? parts[0][0] + parts[1][0] : parts[0][0];
-  return initials.toUpperCase();
-};
 
 const ProfilePage = ({ navigation }) => {
   const insets = useSafeAreaInsets();
@@ -53,10 +48,26 @@ const ProfilePage = ({ navigation }) => {
 
   const loadUser = async () => {
     try {
+      // Show what is stored on the phone straight away...
       const stored = await AsyncStorage.getItem("user");
       if (stored) setUser(JSON.parse(stored));
     } catch (err) {
       console.log(err);
+    }
+
+    // ...then check the server, so an avatar or username changed elsewhere (or
+    // chosen in the setup box) is right here without logging in again. If the
+    // request fails the stored copy stays on screen.
+    try {
+      const me = await getMyProfile();
+      setUser((prev) => ({
+        ...prev,
+        username: me.username,
+        usernameSet: Boolean(me.username), // the server sends null until chosen
+        avatarId: me.avatarId ?? null,
+      }));
+    } catch {
+      /* offline: keep the stored profile */
     }
   };
 
@@ -157,6 +168,9 @@ const ProfilePage = ({ navigation }) => {
 
   const displayName = user?.fullName || user?.username || "Trader";
   const displayEmail = user?.email || "—";
+  // Only a username the person actually chose is shown; until then the stored
+  // `username` is just their first name, which is not a handle.
+  const username = user?.usernameSet ? user.username : null;
 
   return (
     <SafeAreaView style={styles.safe} edges={["left", "right"]}>
@@ -197,20 +211,20 @@ const ProfilePage = ({ navigation }) => {
             </View>
           </View>
 
+          {/* Instagram-style header: the picked avatar with the username under
+              it. The space to its right is kept free for the followers /
+              following counts (next stage). */}
           <View style={styles.profileRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(displayName)}</Text>
-            </View>
-
-            <View style={styles.profileInfo}>
-              <View style={styles.nameRow}>
-                <Text style={styles.name} numberOfLines={1}>
-                  {displayName}
-                </Text>
+            <View style={styles.identity}>
+              <View style={styles.avatarRing}>
+                <AvatarBadge avatarId={user?.avatarId} size={moderateScale(72)} />
               </View>
-              <Text style={styles.email} numberOfLines={1}>
-                {displayEmail}
-              </Text>
+
+              {!!username && (
+                <Text style={styles.username} numberOfLines={1}>
+                  @{username}
+                </Text>
+              )}
             </View>
           </View>
         </View>
@@ -615,52 +629,27 @@ const styles = StyleSheet.create({
   },
   profileRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: moderateScale(14),
   },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.35)",
-    justifyContent: "center",
+  // Avatar with the username centred under it. Followers / following counts
+  // go in the free space to its right (next stage).
+  identity: {
     alignItems: "center",
+    maxWidth: moderateScale(130),
   },
-  avatarText: {
-    fontSize: fontScale(22),
-    fontWeight: "800",
-    color: Colors.white,
-  },
-  profileInfo: { flex: 1 },
-  nameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: moderateScale(8),
-    marginBottom: moderateScale(4),
-  },
-  name: {
-    fontSize: fontScale(Typography.h3),
-    fontWeight: "700",
-    color: Colors.white,
-    maxWidth: "62%",
-  },
-  badge: {
-    backgroundColor: "rgba(255,255,255,0.18)",
-    paddingHorizontal: moderateScale(10),
-    paddingVertical: moderateScale(4),
+  // Soft ring around the avatar so it reads on the blue hero.
+  avatarRing: {
     borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
-  badgeText: {
+  username: {
+    marginTop: moderateScale(8),
     color: Colors.white,
-    fontWeight: "600",
-    fontSize: fontScale(Typography.tiny),
-  },
-  email: {
-    color: "rgba(255,255,255,0.75)",
-    fontSize: fontScale(13),
+    fontSize: fontScale(Typography.bodyLarge),
+    fontWeight: "700",
   },
 
   // ── Body ───────────────────────────────────────────────────────────────
