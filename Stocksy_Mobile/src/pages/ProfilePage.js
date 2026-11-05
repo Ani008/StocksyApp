@@ -24,12 +24,23 @@ import authService from "../../services/authService";
 import { getMyProfile } from "../../services/profileService";
 import { showToast } from "../../services/uiBridge";
 import AvatarBadge from "../components/AvatarBadge";
+import {
+  safeCount,
+  formatCount,
+  followersLabel,
+  followingLabel,
+} from "../utils/followCounts";
 import DeleteAccountModal from "../components/DeleteAccountModal";
 import FlameIcon from "../components/FlameIcon";
 import LeaderboardIcon from "../components/LeaderboardIcon";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const APP_VERSION = "1.0.0";
+
+// The avatar, and the height of the avatar + its rings. The counts are centred
+// against this so they sit level with the picture, not with the username.
+const AVATAR_SIZE = moderateScale(72);
+const AVATAR_BLOCK_HEIGHT = AVATAR_SIZE + 14; // AvatarBadge ring/gap (10) + border (4)
 const SUPPORT_EMAIL = "support@stocksy.online";
 
 const ProfilePage = ({ navigation }) => {
@@ -60,16 +71,44 @@ const ProfilePage = ({ navigation }) => {
     // request fails the stored copy stays on screen.
     try {
       const me = await getMyProfile();
-      setUser((prev) => ({
-        ...prev,
+      const fresh = {
         username: me.username,
         usernameSet: Boolean(me.username), // the server sends null until chosen
         avatarId: me.avatarId ?? null,
-      }));
+        followersCount: safeCount(me.followersCount),
+        followingCount: safeCount(me.followingCount),
+      };
+      setUser((prev) => ({ ...prev, ...fresh }));
+
+      // Remember the counts on the phone so the next visit shows the last
+      // known numbers straight away instead of flashing 0 until the server
+      // answers. (Best effort; the server stays the source of truth.)
+      try {
+        const raw = await AsyncStorage.getItem("user");
+        if (raw) {
+          await AsyncStorage.setItem(
+            "user",
+            JSON.stringify({
+              ...JSON.parse(raw),
+              followersCount: fresh.followersCount,
+              followingCount: fresh.followingCount,
+            }),
+          );
+        }
+      } catch {
+        /* not worth surfacing */
+      }
     } catch {
       /* offline: keep the stored profile */
     }
   };
+
+  // Tapping a count opens the Followers / Following page on that tab.
+  const openFollowList = (initialTab) =>
+    navigation.navigate("FollowList", {
+      initialTab,
+      username: user?.usernameSet ? user.username : undefined,
+    });
 
   const performLogout = async () => {
     try {
@@ -212,12 +251,12 @@ const ProfilePage = ({ navigation }) => {
           </View>
 
           {/* Instagram-style header: the picked avatar with the username under
-              it. The space to its right is kept free for the followers /
-              following counts (next stage). */}
+              it, and the followers / following counts to its right. A count
+              is 0 until someone follows (or you follow someone). */}
           <View style={styles.profileRow}>
             <View style={styles.identity}>
               <View style={styles.avatarRing}>
-                <AvatarBadge avatarId={user?.avatarId} size={moderateScale(72)} />
+                <AvatarBadge avatarId={user?.avatarId} size={AVATAR_SIZE} />
               </View>
 
               {!!username && (
@@ -225,6 +264,36 @@ const ProfilePage = ({ navigation }) => {
                   {username}
                 </Text>
               )}
+            </View>
+
+            <View style={styles.statsRow}>
+              <TouchableOpacity
+                style={styles.stat}
+                activeOpacity={0.7}
+                onPress={() => openFollowList("followers")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={`${followersLabel(user?.followersCount)}, see list`}
+              >
+                <Text style={styles.statCount} numberOfLines={1}>
+                  {formatCount(user?.followersCount)}
+                </Text>
+                <Text style={styles.statLabel}>Followers</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.stat}
+                activeOpacity={0.7}
+                onPress={() => openFollowList("following")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={`${followingLabel(user?.followingCount)}, see list`}
+              >
+                <Text style={styles.statCount} numberOfLines={1}>
+                  {formatCount(user?.followingCount)}
+                </Text>
+                <Text style={styles.statLabel}>Following</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -632,8 +701,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: moderateScale(14),
   },
-  // Avatar with the username centred under it. Followers / following counts
-  // go in the free space to its right (next stage).
+  // Avatar with the username centred under it; the counts sit to its right.
   identity: {
     alignItems: "center",
     maxWidth: moderateScale(130),
@@ -650,6 +718,26 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: fontScale(Typography.bodyLarge),
     fontWeight: "700",
+  },
+  // Followers / following, to the right of the avatar.
+  statsRow: {
+    flex: 1,
+    height: AVATAR_BLOCK_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-evenly",
+  },
+  stat: { alignItems: "center", minWidth: moderateScale(64) },
+  statCount: {
+    color: Colors.white,
+    fontSize: fontScale(Typography.h3),
+    fontWeight: "800",
+  },
+  statLabel: {
+    marginTop: moderateScale(2),
+    color: "rgba(255,255,255,0.8)",
+    fontSize: fontScale(13),
+    fontWeight: "500",
   },
 
   // ── Body ───────────────────────────────────────────────────────────────
