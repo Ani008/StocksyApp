@@ -11,7 +11,7 @@
 // how the picker groups avatars; it is not stored on the user.
 
 const GENDERS = ["male", "female"];
-const PER_GENDER = 6;
+const PER_GENDER = 8;
 
 const AVATARS = Object.freeze(
   GENDERS.flatMap((gender) =>
