@@ -257,6 +257,18 @@ const ProfilePage = ({ navigation }) => {
             <View style={styles.identity}>
               <View style={styles.avatarRing}>
                 <AvatarBadge avatarId={user?.avatarId} size={AVATAR_SIZE} />
+
+                {/* Small pencil on the avatar: opens Edit profile. */}
+                <TouchableOpacity
+                  style={styles.editBadge}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate("EditProfile")}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit profile"
+                >
+                  <Ionicons name="pencil" size={moderateScale(12)} color={Colors.primaryDark} />
+                </TouchableOpacity>
               </View>
 
               {!!username && (
@@ -712,6 +724,20 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.35)",
     backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  // Pencil badge sitting on the bottom-right edge of the avatar.
+  editBadge: {
+    position: "absolute",
+    right: -moderateScale(2),
+    bottom: -moderateScale(2),
+    width: moderateScale(26),
+    height: moderateScale(26),
+    borderRadius: moderateScale(13),
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: Colors.primaryDark,
+    alignItems: "center",
+    justifyContent: "center",
   },
   username: {
     marginTop: moderateScale(8),
