@@ -1,6 +1,6 @@
 const repo = require("../repositories/profileRepository");
 const L = require("../services/profileLogic");
-const { AVATARS } = require("../config/avatars");
+const { getAvatarsForUser } = require("../config/avatars");
 const { ConflictError, NotFoundError, sendError } = require("../utils/errors");
 const logger = require("../utils/logger");
 
@@ -10,20 +10,28 @@ const logger = require("../utils/logger");
 // in the same shape as login, so the app can swap it straight in.
 async function updateMyProfileHandler(req, res) {
   try {
-    const changes = L.parseProfileUpdate(req.body);
+    const changes = L.parseProfileUpdate(req.body, {
+      email: req.user.email,
+    });
 
     let row;
     try {
       row = await repo.updateProfile(req.user.id, changes);
     } catch (err) {
       if (repo.isUsernameTakenError(err)) {
-        throw new ConflictError("That username is already taken.", "USERNAME_TAKEN");
+        throw new ConflictError(
+          "That username is already taken.",
+          "USERNAME_TAKEN",
+        );
       }
       throw err;
     }
     if (!row) throw new NotFoundError("User not found");
 
-    return res.json({ message: "Profile updated", user: L.serializeAccount(row) });
+    return res.json({
+      message: "Profile updated",
+      user: L.serializeAccount(row),
+    });
   } catch (err) {
     return sendError(res, err, logger);
   }
@@ -39,7 +47,11 @@ async function usernameAvailableHandler(req, res) {
     const result = L.checkUsername(req.query.username);
 
     if (!result.ok) {
-      return res.json({ available: false, reason: result.reason, message: result.message });
+      return res.json({
+        available: false,
+        reason: result.reason,
+        message: result.message,
+      });
     }
 
     if (await repo.isUsernameTaken(result.username)) {
@@ -60,7 +72,13 @@ async function usernameAvailableHandler(req, res) {
 // ── GET /api/avatars ──────────────────────────────────────────────────────────
 // The avatars a person can pick: [{ id: "female_3", gender: "female" }, ...].
 async function listAvatarsHandler(req, res) {
-  return res.json({ avatars: AVATARS });
+  return res.json({
+    avatars: getAvatarsForUser(req.user.email),
+  });
 }
 
-module.exports = { updateMyProfileHandler, usernameAvailableHandler, listAvatarsHandler };
+module.exports = {
+  updateMyProfileHandler,
+  usernameAvailableHandler,
+  listAvatarsHandler,
+};

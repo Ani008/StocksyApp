@@ -18,9 +18,18 @@ import AppTextInput from "../components/AppTextInput";
 import AvatarBadge from "../components/AvatarBadge";
 import Button from "../components/Button";
 import SegmentedToggle from "../components/SegmentedToggle";
-import { getAvatars, getMyProfile, updateMyProfile } from "../../services/profileService";
+import {
+  getAvatars,
+  getMyProfile,
+  updateMyProfile,
+} from "../../services/profileService";
 import { showToast } from "../../services/uiBridge";
-import { cleanFullName, fullNameError, profileChanges, MAX_FULL_NAME_LENGTH } from "../utils/editProfile";
+import {
+  cleanFullName,
+  fullNameError,
+  profileChanges,
+  MAX_FULL_NAME_LENGTH,
+} from "../utils/editProfile";
 import {
   AVATAR_GENDERS,
   apiErrorMessage,
@@ -75,7 +84,10 @@ const EditProfilePage = ({ navigation }) => {
         const raw = await AsyncStorage.getItem("user");
         if (raw) {
           const stored = JSON.parse(raw);
-          base = { fullName: stored.fullName || "", avatarId: stored.avatarId ?? null };
+          base = {
+            fullName: stored.fullName || "",
+            avatarId: stored.avatarId ?? null,
+          };
           if (alive) {
             setEmail(stored.email || "");
             setUsername(stored.usernameSet ? stored.username || "" : "");
@@ -87,7 +99,10 @@ const EditProfilePage = ({ navigation }) => {
 
       try {
         const me = await getMyProfile();
-        base = { fullName: me.fullName || base.fullName, avatarId: me.avatarId ?? base.avatarId };
+        base = {
+          fullName: me.fullName || base.fullName,
+          avatarId: me.avatarId ?? base.avatarId,
+        };
         if (alive) setUsername(me.username || "");
       } catch {
         /* offline: the stored copy stays */
@@ -109,7 +124,11 @@ const EditProfilePage = ({ navigation }) => {
   const loadAvatars = async () => {
     setAvatarsState("loading");
     try {
-      setAvatars(await getAvatars());
+      const data = await getAvatars();
+
+      console.log("AVATARS FROM API:", data);
+
+      setAvatars(data);
       setAvatarsState("ready");
     } catch {
       setAvatarsState("error");
@@ -137,7 +156,10 @@ const EditProfilePage = ({ navigation }) => {
       showToast("Profile updated", "success");
       goBack();
     } catch (err) {
-      showToast(apiErrorMessage(err, "Couldn't save your profile. Please try again."), "error");
+      showToast(
+        apiErrorMessage(err, "Couldn't save your profile. Please try again."),
+        "error",
+      );
     } finally {
       setSaving(false);
     }
@@ -182,7 +204,11 @@ const EditProfilePage = ({ navigation }) => {
               accessibilityLabel={`Avatar ${id.replace("_", " ")}`}
               aria-selected={avatarId === id}
             >
-              <AvatarBadge avatarId={id} size={moderateScale(56)} selected={avatarId === id} />
+              <AvatarBadge
+                avatarId={id}
+                size={moderateScale(56)}
+                selected={avatarId === id}
+              />
             </TouchableOpacity>
           ))}
         </View>
@@ -195,10 +221,17 @@ const EditProfilePage = ({ navigation }) => {
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <View style={[styles.inputBox, styles.lockedBox]}>
-        <Text style={[styles.lockedText, !value && styles.lockedPlaceholder]} numberOfLines={1}>
+        <Text
+          style={[styles.lockedText, !value && styles.lockedPlaceholder]}
+          numberOfLines={1}
+        >
           {value || placeholder}
         </Text>
-        <Ionicons name="lock-closed" size={moderateScale(16)} color={Colors.textMuted} />
+        <Ionicons
+          name="lock-closed"
+          size={moderateScale(16)}
+          color={Colors.textMuted}
+        />
       </View>
     </View>
   );
@@ -215,7 +248,11 @@ const EditProfilePage = ({ navigation }) => {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={moderateScale(20)} color={Colors.text} />
+          <Ionicons
+            name="arrow-back"
+            size={moderateScale(20)}
+            color={Colors.text}
+          />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit profile</Text>
         <View style={styles.headerBtn} />
@@ -262,9 +299,15 @@ const EditProfilePage = ({ navigation }) => {
               {!!nameError && <Text style={styles.errorText}>{nameError}</Text>}
             </View>
 
-            {renderLockedRow("Username", username ? `@${username}` : "", "Not set yet")}
+            {renderLockedRow(
+              "Username",
+              username ? `@${username}` : "",
+              "Not set yet",
+            )}
             {renderLockedRow("Email", email, "—")}
-            <Text style={styles.lockNote}>Your username and email can't be changed.</Text>
+            <Text style={styles.lockNote}>
+              Your username and email can't be changed.
+            </Text>
 
             <Button
               title="Save changes"
@@ -355,7 +398,10 @@ const styles = StyleSheet.create({
     fontSize: fontScale(Typography.body),
     color: Colors.text,
   },
-  lockedBox: { backgroundColor: Colors.background, justifyContent: "space-between" },
+  lockedBox: {
+    backgroundColor: Colors.background,
+    justifyContent: "space-between",
+  },
   lockedText: {
     flex: 1,
     marginRight: moderateScale(8),
@@ -374,7 +420,11 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: Colors.danger,
   },
-  retry: { marginTop: moderateScale(6), color: Colors.primaryDark, fontWeight: "700" },
+  retry: {
+    marginTop: moderateScale(6),
+    color: Colors.primaryDark,
+    fontWeight: "700",
+  },
   saveBtn: { marginTop: moderateScale(4) },
 });
 

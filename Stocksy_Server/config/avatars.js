@@ -23,6 +23,43 @@ const AVATARS = Object.freeze(
 
 const AVATAR_IDS = new Set(AVATARS.map((a) => a.id));
 
-const isAvatarId = (value) => typeof value === "string" && AVATAR_IDS.has(value);
+const FOUNDER_AVATAR_ID = "founder_aniket";
 
-module.exports = { GENDERS, AVATARS, isAvatarId };
+const FOUNDER_AVATAR_EMAIL = (
+  process.env.FOUNDER_AVATAR_EMAIL || ""
+).trim().toLowerCase();
+
+const isFounder = (email) =>
+  typeof email === "string" &&
+  FOUNDER_AVATAR_EMAIL !== "" &&
+  email.trim().toLowerCase() === FOUNDER_AVATAR_EMAIL;
+
+const isAvatarId = (value, email) => {
+  if (typeof value !== "string") return false;
+
+  if (AVATAR_IDS.has(value)) return true;
+
+  return value === FOUNDER_AVATAR_ID && isFounder(email);
+};
+
+const getAvatarsForUser = (email) => {
+  if (!isFounder(email)) return AVATARS;
+
+  return [
+    ...AVATARS,
+    {
+      id: FOUNDER_AVATAR_ID,
+      gender: "male",
+      exclusive: true,
+    },
+  ];
+};
+
+module.exports = {
+  GENDERS,
+  AVATARS,
+  FOUNDER_AVATAR_ID,
+  isFounder,
+  isAvatarId,
+  getAvatarsForUser,
+};

@@ -9,7 +9,8 @@
 const express = require("express");
 const router = express.Router();
 const { listAvatarsHandler } = require("../controllers/profileController");
+const { protect } = require("../middleware/auth");
 
-router.get("/", listAvatarsHandler);
+router.get("/", protect, listAvatarsHandler);
 
 module.exports = router;

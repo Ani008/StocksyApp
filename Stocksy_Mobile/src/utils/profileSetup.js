@@ -32,7 +32,12 @@ export const isCheckable = (raw) =>
  */
 export const getSetupNeeds = (profile) => {
   if (!profile) {
-    return { needsUsername: false, needsAvatar: false, needsAny: false, firstTab: "username" };
+    return {
+      needsUsername: false,
+      needsAvatar: false,
+      needsAny: false,
+      firstTab: "username",
+    };
   }
   const needsUsername = !profile.username;
   const needsAvatar = !profile.avatarId;
@@ -75,7 +80,8 @@ const FALLBACK_COLOR = "#94A3B8";
 export const avatarPlaceholder = (avatarId) => {
   const known = PLACEHOLDERS[avatarId];
   if (known) return known;
-  const first = typeof avatarId === "string" && avatarId ? avatarId[0].toUpperCase() : "?";
+  const first =
+    typeof avatarId === "string" && avatarId ? avatarId[0].toUpperCase() : "?";
   return { letter: first, color: FALLBACK_COLOR };
 };
 
@@ -85,13 +91,16 @@ export const groupAvatarsByGender = (avatars) => {
   const groups = Object.fromEntries(AVATAR_GENDERS.map((g) => [g, []]));
   if (!Array.isArray(avatars)) return groups;
   for (const a of avatars) {
-    if (a && typeof a.id === "string" && groups[a.gender]) groups[a.gender].push(a.id);
+    if (a && typeof a.id === "string" && groups[a.gender])
+      groups[a.gender].push(a.id);
   }
   return groups;
 };
 
 // "female_3" → "female"; the gender tab to open when an avatar is already picked.
 export const genderOfAvatar = (avatarId) => {
+  if (avatarId === "founder_aniket") return "male";
+
   const gender = typeof avatarId === "string" ? avatarId.split("_")[0] : "";
   return AVATAR_GENDERS.includes(gender) ? gender : null;
 };
@@ -101,9 +110,13 @@ export const genderOfAvatar = (avatarId) => {
 export const apiErrorCode = (err) => err?.response?.data?.code || null;
 
 // Something safe to show a person after a failed request.
-export const apiErrorMessage = (err, fallback = "Something went wrong. Please try again.") => {
+export const apiErrorMessage = (
+  err,
+  fallback = "Something went wrong. Please try again.",
+) => {
   const message = err?.response?.data?.message;
   if (typeof message === "string" && message) return message;
-  if (err?.request && !err?.response) return "No connection to the server. Check your network.";
+  if (err?.request && !err?.response)
+    return "No connection to the server. Check your network.";
   return fallback;
 };

@@ -3,6 +3,9 @@ import { View, Text, StyleSheet } from "react-native";
 
 import { Colors } from "../theme";
 
+// Founders avatars
+import FounderAniket from "../../assets/avatars/founder/founder_aniket.svg";
+
 // Male avatars
 import Male1 from "../../assets/avatars/male/male_1.svg";
 import Male2 from "../../assets/avatars/male/male_2.svg";
@@ -47,12 +50,13 @@ export const AVATAR_COMPONENTS = {
 const RING = 3;
 const GAP = 2;
 
-export default function AvatarBadge({
-  avatarId,
-  size = 56,
-  selected = false,
-}) {
+export default function AvatarBadge({ avatarId, size = 56, selected = false }) {
   const AvatarComponent = AVATAR_COMPONENTS[avatarId];
+  const isFounderAvatar = avatarId === "founder_aniket";
+  console.log("AVATAR RENDER:", avatarId, {
+    isFounderAvatar,
+    hasComponent: !!AvatarComponent,
+  });
 
   const outer = size + 2 * (RING + GAP);
 
@@ -64,9 +68,7 @@ export default function AvatarBadge({
           width: outer,
           height: outer,
           borderRadius: outer / 2,
-          borderColor: selected
-            ? Colors.primaryDark
-            : "transparent",
+          borderColor: selected ? Colors.primaryDark : "transparent",
         },
       ]}
     >
@@ -80,11 +82,10 @@ export default function AvatarBadge({
           },
         ]}
       >
-        {AvatarComponent ? (
-          <AvatarComponent
-            width={size}
-            height={size}
-          />
+        {isFounderAvatar ? (
+          <FounderAniket width={size} height={size} />
+        ) : AvatarComponent ? (
+          <AvatarComponent width={size} height={size} />
         ) : (
           <View style={styles.fallback}>
             <Text style={styles.fallbackText}>
