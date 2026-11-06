@@ -23,6 +23,7 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
 const formatPrice = (price) =>
   price != null ? `₹${Number(price).toLocaleString("en-IN")}` : "—";
 
+
 const STATUS_META = {
   ACTIVE: { label: "Active", color: Colors.primary, bg: "rgba(37,99,235,0.1)" },
   TRIGGERED: { label: "Triggered", color: Colors.success, bg: "rgba(16,185,129,0.12)" },
@@ -30,7 +31,6 @@ const STATUS_META = {
   FAILED: { label: "Failed", color: Colors.dangerDark, bg: Colors.dangerBg },
   CANCELLED: { label: "Cancelled", color: Colors.textMuted, bg: Colors.divider },
 };
-
 const ACTION_LABEL = { BUY: "Buy GTT", SELL: "Sell GTT", NOTIFY: "Alert" };
 
 // Filter tabs. "Triggered" covers everything that has fired: notify-only alerts
