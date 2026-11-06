@@ -31,8 +31,8 @@ const STATUS_META = {
   FAILED: { label: "Failed", color: Colors.dangerDark, bg: Colors.dangerBg },
   CANCELLED: { label: "Cancelled", color: Colors.textMuted, bg: Colors.divider },
 };
-const ACTION_LABEL = { BUY: "Buy GTT", SELL: "Sell GTT", NOTIFY: "Alert" };
 
+const ACTION_LABEL = { BUY: "Buy", SELL: "Sell", NOTIFY: "Alert" };
 // Filter tabs. "Triggered" covers everything that has fired: notify-only alerts
 // (TRIGGERED), GTT orders that were placed (EXECUTED), and GTT orders that
 // fired but couldn't be placed (FAILED, which keeps its red badge on the row).
