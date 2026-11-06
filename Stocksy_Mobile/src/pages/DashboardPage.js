@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { firstNameOf } from "../utils/editProfile";
 import { useEffect, useRef, useState } from "react";
 
 import Button from "../components/Button";
@@ -190,9 +191,9 @@ const calcChange = (ltp, cp) => {
 const DashboardPage = ({ navigation }) => {
   function getGreeting() {
     const hour = new Date().getHours();
-    if (hour < 12) return "Good Morning!";
-    if (hour < 17) return "Good Afternoon!";
-    return "Good Evening!";
+    if (hour < 12) return "Good Morning,";
+    if (hour < 17) return "Good Afternoon,";
+    return "Good Evening,";
   }
 
   const insets = useSafeAreaInsets();
@@ -257,17 +258,21 @@ const DashboardPage = ({ navigation }) => {
     }, [recheckStreak]),
   );
 
+  // Re-read on every visit, so a name changed on Edit Profile shows up here
+  // as soon as the person comes back to the dashboard.
   useEffect(() => {
     const loadUser = async () => {
-      const stored = await AsyncStorage.getItem("user");
-
-      if (stored) {
-        setUser(JSON.parse(stored));
+      try {
+        const stored = await AsyncStorage.getItem("user");
+        if (stored) setUser(JSON.parse(stored));
+      } catch {
+        /* keep whatever is on screen */
       }
     };
 
     loadUser();
-  }, []);
+    return navigation.addListener("focus", loadUser);
+  }, [navigation]);
 
   // ── Renders a WatchlistItem with live price from WebSocket ──────────────────
   const renderLiveStock = (item) => {
@@ -358,7 +363,7 @@ const DashboardPage = ({ navigation }) => {
               color="white"
               style={{ marginTop: moderateScale(2) }}
             >
-              Hi, {user?.username || "Trader"}
+              {firstNameOf(user?.fullName) || "Trader"}
             </AppText>
           </View>
           <TouchableOpacity

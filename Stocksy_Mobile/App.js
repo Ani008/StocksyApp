@@ -73,6 +73,7 @@ import StreakPage from "./src/pages/StreakPage";
 import DailyChallengePage from "./src/pages/DailyChallengePage";
 import LeaderboardPage from "./src/pages/LeaderboardPage";
 import FollowListPage from "./src/pages/FollowListPage";
+import EditProfilePage from "./src/pages/EditProfilePage";
 import StockOfTheDayPage from "./src/pages/StockOfTheDayPage";
 import StockFaceOffIntroPage from "./src/pages/StockFaceOffIntroPage";
 
@@ -337,6 +338,7 @@ function AppContent() {
             <Stack.Screen name="Streak" component={StreakPage} />
             <Stack.Screen name="Leaderboard" component={LeaderboardPage} />
             <Stack.Screen name="FollowList" component={FollowListPage} />
+            <Stack.Screen name="EditProfile" component={EditProfilePage} />
             <Stack.Screen
               name="DailyChallenge"
               component={DailyChallengePage}

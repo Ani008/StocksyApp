@@ -58,6 +58,7 @@ const config = {
     Streak: "streak",
     Leaderboard: "leaderboard",
     FollowList: "connections",
+    EditProfile: "edit-profile",
     Search: "search",
     StockDetail: "stock",
     BuyOrder: "order",
