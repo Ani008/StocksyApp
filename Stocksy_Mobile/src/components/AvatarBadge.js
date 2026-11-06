@@ -53,10 +53,6 @@ const GAP = 2;
 export default function AvatarBadge({ avatarId, size = 56, selected = false }) {
   const AvatarComponent = AVATAR_COMPONENTS[avatarId];
   const isFounderAvatar = avatarId === "founder_aniket";
-  console.log("AVATAR RENDER:", avatarId, {
-    isFounderAvatar,
-    hasComponent: !!AvatarComponent,
-  });
 
   const outer = size + 2 * (RING + GAP);
 
