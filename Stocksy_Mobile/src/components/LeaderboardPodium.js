@@ -77,12 +77,17 @@ function Place({ rank, entry }) {
               <LeaderboardAvatar
                 id={entry.id}
                 name={entry.name}
+                avatarId={entry.avatarId}
                 avatarUrl={entry.avatarUrl}
                 size={moderateScale(look.avatar)}
                 borderColor={Colors.white}
               />
 
-              <Text style={styles.name} numberOfLines={1}>
+              <Text
+                style={[styles.name, entry.isSelf && styles.nameSelf]}
+                numberOfLines={1}
+                accessibilityLabel={`Rank ${rank}, ${entry.name}${entry.isSelf ? " (you)" : ""}, ${entry.points} points`}
+              >
                 {entry.name}
               </Text>
               <View style={styles.pointsRow}>
@@ -111,7 +116,8 @@ function Place({ rank, entry }) {
  * The top-3 podium: 2nd on the left, 1st in the middle, 3rd on the right.
  *
  * Props:
- *   entries  the top users in rank order ([1st, 2nd, 3rd]), see leaderboardMock
+ *   entries  the top users in rank order ([1st, 2nd, 3rd]); each
+ *            { id, name, points, avatarId, avatarUrl, isSelf } (see utils/leaderboard.js)
  */
 export default function LeaderboardPodium({ entries = [], style }) {
   const [first, second, third] = entries;
@@ -167,6 +173,11 @@ const styles = StyleSheet.create({
     fontSize: fontScale(Typography.caption),
     fontWeight: "700",
     color: Colors.text,
+  },
+  // You, when you are on the podium.
+  nameSelf: {
+    fontWeight: "900",
+    color: Colors.primaryDark,
   },
   pointsRow: {
     flexDirection: "row",

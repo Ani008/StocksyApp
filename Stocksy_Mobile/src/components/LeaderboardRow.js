@@ -21,7 +21,8 @@ const SLOT_WIDTH = AVATAR_LEFT - RANK_LEFT - moderateScale(8);
  *
  * Props:
  *   rank    the position number to show
- *   entry   { id, name, points, avatarUrl }
+ *   entry   { id, name, points, avatarId, avatarUrl, isSelf }
+ *           your own row (isSelf) gets a blue outline and a "You" tag
  */
 export default function LeaderboardRow({ rank, entry, style }) {
   // Every row has the same fixed slot for the number, so avatars, names and
@@ -32,7 +33,10 @@ export default function LeaderboardRow({ rank, entry, style }) {
   const numberSize = fontScale(Math.min(MAX_RANK_SIZE, fitted));
 
   return (
-    <View style={[styles.row, style]}>
+    <View
+      style={[styles.row, entry.isSelf && styles.rowSelf, style]}
+      accessibilityLabel={`Rank ${rank}, ${entry.name}${entry.isSelf ? " (you)" : ""}, ${entry.points} points`}
+    >
       <Text
         style={[
           styles.rank,
@@ -50,6 +54,7 @@ export default function LeaderboardRow({ rank, entry, style }) {
       <LeaderboardAvatar
         id={entry.id}
         name={entry.name}
+        avatarId={entry.avatarId}
         avatarUrl={entry.avatarUrl}
         size={moderateScale(52)}
         borderColor={Colors.white}
@@ -57,9 +62,16 @@ export default function LeaderboardRow({ rank, entry, style }) {
       />
 
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>
-          {entry.name}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name} numberOfLines={1}>
+            {entry.name}
+          </Text>
+          {entry.isSelf && (
+            <View style={styles.youTag}>
+              <Text style={styles.youText}>You</Text>
+            </View>
+          )}
+        </View>
         <View style={styles.pointsRow}>
           <Ionicons name="star" size={moderateScale(14)} color={Colors.warning} />
           <Text style={styles.points}>{entry.points}</Text>
@@ -83,6 +95,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.divider,
   },
+  // Your own row.
+  rowSelf: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
+  },
   // Giant faded number behind everything, pushed down a little so its bottom
   // is cut off by the row.
   rank: {
@@ -99,10 +116,27 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: moderateScale(14),
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: moderateScale(8),
+  },
   name: {
+    flexShrink: 1,
     fontSize: fontScale(Typography.bodyLarge),
     fontWeight: "800",
     color: Colors.text,
+  },
+  youTag: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 8,
+    paddingHorizontal: moderateScale(7),
+    paddingVertical: moderateScale(2),
+  },
+  youText: {
+    fontSize: fontScale(Typography.small),
+    fontWeight: "800",
+    color: Colors.primaryDark,
   },
   pointsRow: {
     flexDirection: "row",

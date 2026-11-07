@@ -134,6 +134,17 @@ const profileLimiter = rateLimit({
   store: makeRedisStore('rl:profile:'),
 });
 
+// Leaderboard reads. Per user, like the social limiters. The table is worked out
+// from several tables on every request, so this is lower than plain reads, but
+// still leaves room for switching tabs and pulling to refresh.
+const leaderboardLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 1000, // 1 min
+  max: 30,
+  keyGenerator: perUserKey,
+  store: makeRedisStore('rl:leaderboard:'),
+});
+
 // "Is this username free?" — used on the signup screen, BEFORE login, so this
 // one can only count per IP. Generous because the app checks as you type.
 const usernameCheckLimiter = rateLimit({
@@ -151,5 +162,6 @@ module.exports = {
   followLimiter,
   userSearchLimiter,
   profileLimiter,
+  leaderboardLimiter,
   usernameCheckLimiter,
 };

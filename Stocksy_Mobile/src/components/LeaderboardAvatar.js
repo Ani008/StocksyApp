@@ -1,7 +1,11 @@
 import React from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 
+import { AVATAR_COMPONENTS } from "./AvatarBadge";
+import FounderAniket from "../../assets/avatars/founder/founder_aniket.svg";
 import { Colors, fontScale } from "../theme";
+
+const FOUNDER_AVATAR_ID = "founder_aniket";
 
 // Soft background colours for the placeholder circles. Picked from the user id
 // so the same person always gets the same colour.
@@ -25,12 +29,14 @@ const colorFor = (id = "") => {
 /**
  * Round avatar for a leaderboard user.
  *
- * Shows `avatarUrl` when there is one; until the backend sends avatars it falls
- * back to a coloured circle with the user's first letter.
+ * Shows, in this order: the avatar the person picked (`avatarId`, same pictures
+ * as the Profile and the follow lists), their Google photo (`avatarUrl`), or a
+ * coloured circle with the user's first letter.
  */
 export default function LeaderboardAvatar({
   id,
   name,
+  avatarId,
   avatarUrl,
   size = 48,
   borderColor = Colors.white,
@@ -43,9 +49,13 @@ export default function LeaderboardAvatar({
     borderColor,
   };
 
+  const Picked = avatarId === FOUNDER_AVATAR_ID ? FounderAniket : AVATAR_COMPONENTS[avatarId];
+
   return (
     <View style={[styles.circle, circle, style]}>
-      {avatarUrl ? (
+      {Picked ? (
+        <Picked width="100%" height="100%" />
+      ) : avatarUrl ? (
         <Image source={{ uri: avatarUrl }} style={styles.image} />
       ) : (
         <View style={[styles.fallback, { backgroundColor: colorFor(id) }]}>
