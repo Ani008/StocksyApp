@@ -133,10 +133,16 @@ const DailyChallengePage = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {tab === "challenge" ? (
           <>
+            <NiftyPredictionCard
+              niftyLtp={niftyLtp}
+              niftyChange={niftyChange}
+            />
             <View style={styles.widgetRow}>
               <DailyQuizCard onPress={comingSoon("Daily Quiz")} />
               <StockOfTheDayCard onPress={openFaceOff} />

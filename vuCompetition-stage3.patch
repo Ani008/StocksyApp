@@ -1,0 +1,1552 @@
+From cb4d1ca660361acd3401e5525fd5e417712a1e6c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 7 Nov 2026 13:58:22 +0000
+Subject: [PATCH] VU Competition stage 3: feature switches, join API, countdown
+
+Backend: app_features + competition_entries (migration 023), GET /api/config/features,
+GET /api/competition/me, POST /api/competition/join, fail-closed feature service with
+short cache, per-user rate limit, 18 tests.
+Mobile: useAppFeatures (launch + foreground resume), card gated by competition_visible,
+join saves the division, registered box with live countdown to competition_starts_at.
+---
+ Stocksy_Mobile/services/competitionService.js |  19 ++
+ Stocksy_Mobile/services/featureService.js     |  19 ++
+ .../src/components/CompetitionCountdown.js    | 159 ++++++++++++
+ Stocksy_Mobile/src/hooks/useAppFeatures.js    | 108 ++++++++
+ .../src/pages/DailyChallengePage.js           |  23 +-
+ Stocksy_Mobile/src/pages/VuCompetitionPage.js | 205 +++++++++++++--
+ Stocksy_Server/config/competition.js          |  18 ++
+ .../controllers/competitionController.js      |  30 +++
+ .../controllers/configController.js           |  44 ++++
+ Stocksy_Server/middleware/rateLimiter.js      |  11 +
+ Stocksy_Server/migrations/023_competition.sql |  55 ++++
+ .../repositories/competitionRepository.js     |  36 +++
+ .../repositories/featureRepository.js         |  11 +
+ Stocksy_Server/routes/competition.js          |  16 ++
+ Stocksy_Server/routes/config.js               |  12 +
+ Stocksy_Server/server.js                      |   2 +
+ Stocksy_Server/services/competitionService.js | 108 ++++++++
+ Stocksy_Server/services/featureService.js     |  90 +++++++
+ Stocksy_Server/tests/competition.test.js      | 240 ++++++++++++++++++
+ Stocksy_Server/utils/errors.js                |  25 ++
+ 20 files changed, 1208 insertions(+), 23 deletions(-)
+ create mode 100644 Stocksy_Mobile/services/competitionService.js
+ create mode 100644 Stocksy_Mobile/services/featureService.js
+ create mode 100644 Stocksy_Mobile/src/components/CompetitionCountdown.js
+ create mode 100644 Stocksy_Mobile/src/hooks/useAppFeatures.js
+ create mode 100644 Stocksy_Server/config/competition.js
+ create mode 100644 Stocksy_Server/controllers/competitionController.js
+ create mode 100644 Stocksy_Server/controllers/configController.js
+ create mode 100644 Stocksy_Server/migrations/023_competition.sql
+ create mode 100644 Stocksy_Server/repositories/competitionRepository.js
+ create mode 100644 Stocksy_Server/repositories/featureRepository.js
+ create mode 100644 Stocksy_Server/routes/competition.js
+ create mode 100644 Stocksy_Server/routes/config.js
+ create mode 100644 Stocksy_Server/services/competitionService.js
+ create mode 100644 Stocksy_Server/services/featureService.js
+ create mode 100644 Stocksy_Server/tests/competition.test.js
+
+diff --git a/Stocksy_Mobile/services/competitionService.js b/Stocksy_Mobile/services/competitionService.js
+new file mode 100644
+index 0000000..83b734d
+--- /dev/null
++++ b/Stocksy_Mobile/services/competitionService.js
+@@ -0,0 +1,19 @@
++// services/competitionService.js
++//
++// VU Trading Competition calls. Silent: the page shows its own messages.
++import api from "./api";
++
++/**
++ * My status: { visible, registrationOpen, startsAt, serverTime, divisions, entry }.
++ * `entry` is null until I join, else { division, joinedAt }.
++ */
++export const getCompetitionStatus = async () => {
++  const res = await api.get("/competition/me", { silent: true });
++  return res.data;
++};
++
++/** Save my division. Resolves { entry, created }. Safe to repeat. */
++export const joinCompetition = async (division) => {
++  const res = await api.post("/competition/join", { division }, { silent: true });
++  return res.data;
++};
+diff --git a/Stocksy_Mobile/services/featureService.js b/Stocksy_Mobile/services/featureService.js
+new file mode 100644
+index 0000000..303be2c
+--- /dev/null
++++ b/Stocksy_Mobile/services/featureService.js
+@@ -0,0 +1,19 @@
++// services/featureService.js
++//
++// Remote feature switches (GET /api/config/features, public). Silent: the screens
++// decide what to show, an error toast here would only be noise.
++import api from "./api";
++
++/**
++ * { features: { competition_visible, ... }, settings: { competition_starts_at },
++ *   serverTime }. Throws on a network error OR a response that doesn't look right,
++ * so a half-broken answer is never mistaken for "switched on".
++ */
++export const fetchAppFeatures = async () => {
++  const res = await api.get("/config/features", { silent: true });
++  const data = res?.data;
++  if (!data || data.success !== true || typeof data.features !== "object" || data.features === null) {
++    throw new Error("Invalid features response");
++  }
++  return data;
++};
+diff --git a/Stocksy_Mobile/src/components/CompetitionCountdown.js b/Stocksy_Mobile/src/components/CompetitionCountdown.js
+new file mode 100644
+index 0000000..bd42823
+--- /dev/null
++++ b/Stocksy_Mobile/src/components/CompetitionCountdown.js
+@@ -0,0 +1,159 @@
++import React, { useEffect, useState } from "react";
++import { StyleSheet, Text, View } from "react-native";
++import { LinearGradient } from "expo-linear-gradient";
++import { Ionicons } from "@expo/vector-icons";
++
++import { VU } from "../constants/vuCompetition";
++import { fontScale, moderateScale } from "../theme";
++
++const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
++const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
++const pad = (n) => String(n).padStart(2, "0");
++
++/** "18 Nov, 12:00 PM" in IST, whatever the phone's time zone is. */
++export function formatIst(iso) {
++  const t = Date.parse(iso);
++  if (Number.isNaN(t)) return "";
++  const d = new Date(t + IST_OFFSET_MS); // read with the UTC getters = IST wall clock
++  const h = d.getUTCHours();
++  const h12 = h % 12 === 0 ? 12 : h % 12;
++  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${h12}:${pad(d.getUTCMinutes())} ${h >= 12 ? "PM" : "AM"}`;
++}
++
++/** { days, hours, minutes, seconds, done } until `targetMs`. */
++export function timeLeft(targetMs, nowMs) {
++  const diff = Math.max(0, targetMs - nowMs);
++  const total = Math.floor(diff / 1000);
++  return {
++    days: Math.floor(total / 86400),
++    hours: Math.floor((total % 86400) / 3600),
++    minutes: Math.floor((total % 3600) / 60),
++    seconds: total % 60,
++    done: diff === 0,
++  };
++}
++
++/**
++ * CompetitionCountdown: a box counting down to the contest start.
++ *
++ * Props:
++ *   startsAt    ISO string, the moment the contest starts (from the server)
++ *   offsetMs    server clock minus phone clock, so a wrong phone clock can't skew it
++ */
++export default function CompetitionCountdown({ startsAt, offsetMs = 0 }) {
++  const target = Date.parse(startsAt);
++  const valid = !Number.isNaN(target);
++  const [now, setNow] = useState(Date.now() + offsetMs);
++
++  useEffect(() => {
++    if (!valid) return undefined;
++    setNow(Date.now() + offsetMs);
++    const id = setInterval(() => setNow(Date.now() + offsetMs), 1000);
++    return () => clearInterval(id);
++  }, [valid, offsetMs]);
++
++  if (!valid) return null;
++  const left = timeLeft(target, now);
++
++  if (left.done) {
++    return (
++      <View style={styles.startedBox}>
++        <Ionicons name="flash" size={moderateScale(18)} color={VU.orangeDeep} />
++        <Text style={styles.startedText}>The contest has started!</Text>
++      </View>
++    );
++  }
++
++  const units = [
++    { label: "Days", value: left.days },
++    { label: "Hours", value: left.hours },
++    { label: "Mins", value: left.minutes },
++    { label: "Secs", value: left.seconds },
++  ];
++  const a11y = `Contest starts in ${left.days} days, ${left.hours} hours, ${left.minutes} minutes`;
++
++  return (
++    <LinearGradient
++      colors={[VU.blueLight, VU.blue, VU.blueDeep]}
++      start={{ x: 0, y: 0 }}
++      end={{ x: 1, y: 1 }}
++      style={styles.box}
++      accessible
++      accessibilityLabel={a11y}
++    >
++      <Text style={styles.heading}>Contest starts in</Text>
++      <View style={styles.row}>
++        {units.map((u) => (
++          <View key={u.label} style={styles.tile}>
++            <Text style={styles.value}>{pad(u.value)}</Text>
++            <Text style={styles.unit}>{u.label}</Text>
++          </View>
++        ))}
++      </View>
++      <Text style={styles.when}>{formatIst(startsAt)} IST</Text>
++    </LinearGradient>
++  );
++}
++
++const styles = StyleSheet.create({
++  box: {
++    borderRadius: 20,
++    padding: moderateScale(16),
++    marginTop: moderateScale(16),
++    overflow: "hidden",
++  },
++  heading: {
++    color: VU.white,
++    fontSize: fontScale(13),
++    fontWeight: "600",
++    textAlign: "center",
++    opacity: 0.9,
++  },
++  row: {
++    flexDirection: "row",
++    justifyContent: "space-between",
++    marginTop: moderateScale(12),
++  },
++  tile: {
++    flex: 1,
++    alignItems: "center",
++    backgroundColor: VU.white,
++    borderRadius: 14,
++    paddingVertical: moderateScale(10),
++    marginHorizontal: moderateScale(4),
++  },
++  value: {
++    color: VU.blueDeep,
++    fontSize: fontScale(24),
++    fontWeight: "800",
++    fontVariant: ["tabular-nums"],
++  },
++  unit: {
++    color: VU.orangeDeep,
++    fontSize: fontScale(11),
++    fontWeight: "700",
++    marginTop: 2,
++  },
++  when: {
++    color: VU.white,
++    fontSize: fontScale(12),
++    fontWeight: "600",
++    textAlign: "center",
++    marginTop: moderateScale(12),
++  },
++  startedBox: {
++    flexDirection: "row",
++    alignItems: "center",
++    justifyContent: "center",
++    backgroundColor: "#FFF3E8",
++    borderRadius: 16,
++    paddingVertical: moderateScale(14),
++    marginTop: moderateScale(16),
++  },
++  startedText: {
++    color: VU.orangeDeep,
++    fontSize: fontScale(14),
++    fontWeight: "700",
++    marginLeft: moderateScale(8),
++  },
++});
+diff --git a/Stocksy_Mobile/src/hooks/useAppFeatures.js b/Stocksy_Mobile/src/hooks/useAppFeatures.js
+new file mode 100644
+index 0000000..9fb3443
+--- /dev/null
++++ b/Stocksy_Mobile/src/hooks/useAppFeatures.js
+@@ -0,0 +1,108 @@
++import { useEffect, useState } from "react";
++import { AppState } from "react-native";
++
++import { fetchAppFeatures } from "../../services/featureService";
++
++// Remote on/off switches from the server, shared by every screen. One copy lives
++// here in memory (no request per render); it is refreshed
++//   - when a screen that needs it first opens (launch),
++//   - whenever the app comes back to the foreground,
++//   - on a manual pull-to-refresh (call `refresh({ force: true })`).
++//
++// The server decides what is allowed; this only decides what to SHOW. If the
++// switches can't be fetched (offline, server down, garbled answer) we keep what
++// was last shown, but hold back anything that would START something (joining,
++// trading) until a good answer arrives, and show nothing new.
++
++const OFF = {
++  competition_visible: false,
++  competition_registration_open: false,
++  competition_enabled: false,
++};
++
++const MIN_GAP_MS = 5000; // don't refetch more often than this unless forced
++
++let state = {
++  features: OFF,
++  settings: { competition_starts_at: null },
++  serverOffsetMs: 0, // server clock minus phone clock, so a wrong phone clock can't skew the countdown
++  loaded: false, // a fetch has finished (good or bad)
++  stale: false, // the last fetch failed
++};
++const listeners = new Set();
++let inflight = null;
++let lastFetch = 0;
++let appStateSub = null;
++
++const emit = () => listeners.forEach((l) => l(state));
++
++// Only a real `true` counts as on.
++const strictFlags = (raw) => {
++  const out = { ...OFF };
++  for (const key of Object.keys(OFF)) out[key] = raw?.[key] === true;
++  return out;
++};
++
++export function refreshAppFeatures({ force = false } = {}) {
++  if (inflight) return inflight;
++  if (!force && Date.now() - lastFetch < MIN_GAP_MS) return Promise.resolve(state);
++
++  inflight = (async () => {
++    try {
++      const data = await fetchAppFeatures();
++      const serverMs = Date.parse(data.serverTime);
++      state = {
++        features: strictFlags(data.features),
++        settings: { competition_starts_at: data.settings?.competition_starts_at || null },
++        serverOffsetMs: Number.isNaN(serverMs) ? state.serverOffsetMs : serverMs - Date.now(),
++        loaded: true,
++        stale: false,
++      };
++    } catch {
++      // Keep what was last shown, but nothing that starts an action stays on.
++      state = {
++        ...state,
++        features: {
++          ...state.features,
++          competition_registration_open: false,
++          competition_enabled: false,
++        },
++        loaded: true,
++        stale: true,
++      };
++    } finally {
++      lastFetch = Date.now();
++      inflight = null;
++      emit();
++    }
++    return state;
++  })();
++  return inflight;
++}
++
++// One listener for the whole app: refresh when it returns to the foreground.
++function ensureForegroundRefresh() {
++  if (appStateSub) return;
++  let last = AppState.currentState;
++  appStateSub = AppState.addEventListener("change", (next) => {
++    if (/inactive|background/.test(last) && next === "active") refreshAppFeatures();
++    last = next;
++  });
++}
++
++/** { features, settings, serverOffsetMs, loaded, stale, refresh } */
++export default function useAppFeatures() {
++  const [snapshot, setSnapshot] = useState(state);
++
++  useEffect(() => {
++    listeners.add(setSnapshot);
++    setSnapshot(state);
++    ensureForegroundRefresh();
++    refreshAppFeatures();
++    return () => {
++      listeners.delete(setSnapshot);
++    };
++  }, []);
++
++  return { ...snapshot, refresh: refreshAppFeatures };
++}
+diff --git a/Stocksy_Mobile/src/pages/DailyChallengePage.js b/Stocksy_Mobile/src/pages/DailyChallengePage.js
+index f5812b3..3b0a020 100644
+--- a/Stocksy_Mobile/src/pages/DailyChallengePage.js
++++ b/Stocksy_Mobile/src/pages/DailyChallengePage.js
+@@ -1,5 +1,6 @@
+ import React, { useRef, useState } from "react";
+ import {
++  RefreshControl,
+   ScrollView,
+   StatusBar,
+   StyleSheet,
+@@ -17,6 +18,7 @@ import StockOfTheDayCard from "../components/StockOfTheDayCard";
+ import ChallengeFriendCard from "../components/ChallengeFriendCard";
+ import VuCompetitionCard from "../components/VuCompetitionCard";
+ import useMarketData from "../hooks/useMarketData";
++import useAppFeatures from "../hooks/useAppFeatures";
+ import { StreakContent } from "./StreakPage";
+ import { hasSeenFaceOffIntro } from "../utils/faceOffIntro";
+ import { showToast } from "../../services/uiBridge";
+@@ -48,6 +50,16 @@ const calcChange = (ltp, cp) => {
+ const DailyChallengePage = ({ navigation }) => {
+   const [tab, setTab] = useState("challenge");
+ 
++  // Remote switches: the VU card only shows when the server says so. Checked on
++  // launch, on returning to the app and on pull-to-refresh (no app release needed).
++  const { features, refresh } = useAppFeatures();
++  const [refreshing, setRefreshing] = useState(false);
++  const onRefresh = async () => {
++    setRefreshing(true);
++    await refresh({ force: true });
++    setRefreshing(false);
++  };
++
+   // Live Nifty 50, from the shared market socket (same key the Dashboard uses).
+   const { prices } = useMarketData();
+   const nifty = prices["NSE_INDEX|Nifty 50"];
+@@ -121,6 +133,7 @@ const DailyChallengePage = ({ navigation }) => {
+       <ScrollView
+         contentContainerStyle={styles.content}
+         showsVerticalScrollIndicator={false}
++        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+       >
+         {tab === "challenge" ? (
+           <>
+@@ -134,10 +147,12 @@ const DailyChallengePage = ({ navigation }) => {
+               onChallenge={comingSoon("Challenge a Friend")}
+             />
+             {/* VU Trading Competition banner: opens the overview, rules and join page */}
+-            <VuCompetitionCard
+-              style={styles.vuCard}
+-              onPress={() => navigation.navigate("VuCompetition")}
+-            />
++            {features.competition_visible ? (
++              <VuCompetitionCard
++                style={styles.vuCard}
++                onPress={() => navigation.navigate("VuCompetition")}
++              />
++            ) : null}
+           </>
+         ) : (
+           <StreakContent />
+diff --git a/Stocksy_Mobile/src/pages/VuCompetitionPage.js b/Stocksy_Mobile/src/pages/VuCompetitionPage.js
+index b07e539..22e7085 100644
+--- a/Stocksy_Mobile/src/pages/VuCompetitionPage.js
++++ b/Stocksy_Mobile/src/pages/VuCompetitionPage.js
+@@ -1,12 +1,24 @@
+-import React, { useEffect, useState } from "react";
+-import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
++import React, { useCallback, useEffect, useRef, useState } from "react";
++import {
++  ActivityIndicator,
++  RefreshControl,
++  ScrollView,
++  StatusBar,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
+ import { SafeAreaView } from "react-native-safe-area-context";
+ import { LinearGradient } from "expo-linear-gradient";
+ import { Ionicons } from "@expo/vector-icons";
+ import AsyncStorage from "@react-native-async-storage/async-storage";
+ 
+ import { CompetitionScene, useReduceMotion } from "../components/VuCompetitionCard";
++import CompetitionCountdown from "../components/CompetitionCountdown";
+ import { getMyProfile } from "../../services/profileService";
++import { getCompetitionStatus, joinCompetition } from "../../services/competitionService";
++import { apiErrorMessage } from "../utils/profileSetup";
+ import { showToast } from "../../services/uiBridge";
+ import { DIVISIONS, OVERVIEW, RULES, VU } from "../constants/vuCompetition";
+ import { Colors, Shadows, fontScale, moderateScale } from "../theme";
+@@ -14,13 +26,14 @@ import { Colors, Shadows, fontScale, moderateScale } from "../theme";
+ /**
+  * VU Trading Competition page (opened from the card on Daily Challenge).
+  *
+- * Frontend only for now (stage 2):
+- *   - the student's name, username and email are filled in from the account
+- *     (locked: they identify the account, so this page never edits them)
+- *   - a Division dropdown, A to G
+- *   - the competition overview and rules
+- * Joining is not wired to a server yet (stage 3), so "Join competition" only
+- * checks that a division is picked and then tells the person it is coming.
++ * The student's name, username and email are filled in from the account (locked:
++ * they identify the account, and the server takes them from the login, never from
++ * this form), a Division dropdown, then the overview and rules.
++ *
++ * "Join competition" saves the division on the server. Once saved, the form is
++ * replaced by a "You're registered" box with a countdown to the contest start.
++ * Whether joining is open, the countdown date and the division list all come from
++ * the server (GET /api/competition/me), so they can change without an app release.
+  */
+ const VuCompetitionPage = ({ navigation }) => {
+   const reduceMotion = useReduceMotion();
+@@ -30,10 +43,43 @@ const VuCompetitionPage = ({ navigation }) => {
+   const [username, setUsername] = useState("");
+   const [email, setEmail] = useState("");
+ 
+-  const [division, setDivision] = useState(null); // a DIVISIONS key, or null
++  const [division, setDivision] = useState(null); // a division key, or null
+   const [open, setOpen] = useState(false);
+   const [triedJoin, setTriedJoin] = useState(false);
+ 
++  // From the server: { visible, registrationOpen, startsAt, divisions, entry }.
++  const [status, setStatus] = useState(null);
++  const [statusFailed, setStatusFailed] = useState(false);
++  const [offsetMs, setOffsetMs] = useState(0); // server clock minus phone clock
++  const [refreshing, setRefreshing] = useState(false);
++  const [joining, setJoining] = useState(false);
++  const joiningRef = useRef(false); // ignores a second tap while the first is saving
++
++  const loadStatus = useCallback(async () => {
++    try {
++      const s = await getCompetitionStatus();
++      const serverMs = Date.parse(s.serverTime);
++      if (!Number.isNaN(serverMs)) setOffsetMs(serverMs - Date.now());
++      setStatus(s);
++      setStatusFailed(false);
++    } catch {
++      setStatusFailed(true);
++    }
++  }, []);
++
++  useEffect(() => {
++    loadStatus();
++  }, [loadStatus]);
++
++  const onRefresh = async () => {
++    setRefreshing(true);
++    await loadStatus();
++    setRefreshing(false);
++  };
++
++  const divisions = status?.divisions?.length ? status.divisions : DIVISIONS;
++  const entry = status?.entry || null;
++
+   const goBack = () => {
+     if (navigation.canGoBack()) navigation.goBack();
+     else navigation.navigate("MainTabs");
+@@ -70,17 +116,43 @@ const VuCompetitionPage = ({ navigation }) => {
+     };
+   }, []);
+ 
+-  const selected = DIVISIONS.find((d) => d.key === division);
++  const selected = divisions.find((d) => d.key === division);
+   const divisionError = triedJoin && !division;
+ 
+-  const handleJoin = () => {
++  const closedNotice = (() => {
++    if (!status || status.registrationOpen) return "";
++    const started = status.startsAt && Date.parse(status.startsAt) <= Date.now() + offsetMs;
++    return started ? "Registration has closed. The contest has started." : "Registration isn't open right now.";
++  })();
++
++  const handleJoin = async () => {
+     setTriedJoin(true);
++    if (!status) return;
++    if (!status.registrationOpen) {
++      showToast(closedNotice, "warning");
++      return;
++    }
+     if (!division) {
+       showToast("Please select your division first", "warning");
+       return;
+     }
+-    // Stage 3 will create the entry and the contest wallet on the server.
+-    showToast("Joining isn't live yet. Coming soon!", "warning");
++    if (joiningRef.current) return;
++    joiningRef.current = true;
++    setJoining(true);
++    try {
++      const { entry: saved } = await joinCompetition(division);
++      setStatus((s) => ({ ...s, entry: saved }));
++      setOpen(false);
++      showToast(`You're in! Division ${saved.division}`, "success");
++    } catch (err) {
++      showToast(apiErrorMessage(err, "Couldn't save your division. Please try again."), "error");
++      const code = err?.response?.data?.code;
++      // Someone else's change (joined on another device, or registration just closed): show the truth.
++      if (code === "ALREADY_JOINED" || code === "REGISTRATION_CLOSED") loadStatus();
++    } finally {
++      joiningRef.current = false;
++      setJoining(false);
++    }
+   };
+ 
+   const lockedRow = (label, value, placeholder) => (
+@@ -126,6 +198,9 @@ const VuCompetitionPage = ({ navigation }) => {
+           contentContainerStyle={styles.content}
+           showsVerticalScrollIndicator={false}
+           keyboardShouldPersistTaps="handled"
++          refreshControl={
++            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VU.white} colors={[VU.orange]} />
++          }
+         >
+           {/* hero */}
+           <View style={styles.hero}>
+@@ -135,7 +210,48 @@ const VuCompetitionPage = ({ navigation }) => {
+             </Text>
+           </View>
+ 
+-          {/* ── 1. Your details ───────────────────────────────────────────── */}
++          {/* ── 1. Registration: details form, or the "registered" box with the countdown ── */}
++          {entry ? (
++            <View style={styles.card}>
++              <View style={styles.regHead}>
++                <View style={styles.regCheck}>
++                  <Ionicons name="checkmark" size={moderateScale(20)} color={VU.white} />
++                </View>
++                <View style={styles.regHeadText}>
++                  <Text style={styles.cardTitleTight}>You're registered</Text>
++                  <Text style={styles.regSub} numberOfLines={1}>
++                    {fullName || "Student"}
++                    {username ? `  ·  @${username}` : ""}
++                  </Text>
++                </View>
++                <View style={styles.divChip}>
++                  <Text style={styles.divChipText}>Div {entry.division}</Text>
++                </View>
++              </View>
++              <CompetitionCountdown startsAt={status.startsAt} offsetMs={offsetMs} />
++              <Text style={styles.regNote}>
++                Your contest wallet and trading unlock when the contest starts. Keep the app handy!
++              </Text>
++            </View>
++          ) : statusFailed && !status ? (
++            <View style={styles.card}>
++              <Text style={styles.cardTitle}>Couldn't load the competition</Text>
++              <Text style={styles.body}>Check your connection and try again.</Text>
++              <TouchableOpacity
++                onPress={loadStatus}
++                style={[styles.joinBtn, styles.retryBtn]}
++                accessibilityRole="button"
++                accessibilityLabel="Try again"
++              >
++                <Text style={styles.joinText}>Try again</Text>
++              </TouchableOpacity>
++            </View>
++          ) : status && !status.visible ? (
++            <View style={styles.card}>
++              <Text style={styles.cardTitle}>Not available right now</Text>
++              <Text style={styles.body}>The VU Trading Competition isn't open at the moment. Check back soon.</Text>
++            </View>
++          ) : (
+           <View style={styles.card}>
+             <Text style={styles.cardTitle}>Your details</Text>
+ 
+@@ -166,7 +282,7 @@ const VuCompetitionPage = ({ navigation }) => {
+ 
+               {open ? (
+                 <View style={styles.menu}>
+-                  {DIVISIONS.map((d, i) => {
++                  {divisions.map((d, i) => {
+                     const active = d.key === division;
+                     return (
+                       <TouchableOpacity
+@@ -191,17 +307,27 @@ const VuCompetitionPage = ({ navigation }) => {
+               {divisionError ? <Text style={styles.errorText}>Please select your division.</Text> : null}
+             </View>
+ 
++            {closedNotice ? <Text style={styles.closedText}>{closedNotice}</Text> : null}
++
+             <TouchableOpacity
+               activeOpacity={0.9}
+               onPress={handleJoin}
+-              style={[styles.joinBtn, !division && styles.joinBtnIdle]}
++              disabled={joining}
++              style={[styles.joinBtn, (!division || !status?.registrationOpen) && styles.joinBtnIdle]}
+               accessibilityRole="button"
+               accessibilityLabel="Join competition"
+             >
+-              <Text style={styles.joinText}>Join competition</Text>
+-              <Ionicons name="arrow-forward" size={moderateScale(18)} color={VU.white} />
++              {joining ? (
++                <ActivityIndicator color={VU.white} />
++              ) : (
++                <>
++                  <Text style={styles.joinText}>Join competition</Text>
++                  <Ionicons name="arrow-forward" size={moderateScale(18)} color={VU.white} />
++                </>
++              )}
+             </TouchableOpacity>
+           </View>
++          )}
+ 
+           {/* ── 2. Overview ───────────────────────────────────────────────── */}
+           <View style={styles.card}>
+@@ -409,6 +535,47 @@ const styles = StyleSheet.create({
+     marginTop: moderateScale(4),
+   },
+   joinBtnIdle: { opacity: 0.55 },
++  retryBtn: { marginTop: moderateScale(16) },
++  closedText: {
++    color: VU.orangeDeep,
++    fontSize: fontScale(12.5),
++    fontWeight: "600",
++    marginBottom: moderateScale(10),
++  },
++
++  // registered box
++  regHead: { flexDirection: "row", alignItems: "center" },
++  regCheck: {
++    width: moderateScale(38),
++    height: moderateScale(38),
++    borderRadius: moderateScale(19),
++    backgroundColor: VU.orange,
++    alignItems: "center",
++    justifyContent: "center",
++    marginRight: moderateScale(12),
++  },
++  regHeadText: { flex: 1, marginRight: moderateScale(8) },
++  cardTitleTight: {
++    color: Colors.text,
++    fontSize: fontScale(18),
++    fontWeight: "800",
++    letterSpacing: -0.3,
++  },
++  regSub: { color: Colors.textSecondary, fontSize: fontScale(12.5), marginTop: 2 },
++  divChip: {
++    backgroundColor: "#FFF3E8",
++    borderRadius: 12,
++    paddingHorizontal: moderateScale(12),
++    paddingVertical: moderateScale(6),
++  },
++  divChipText: { color: VU.orangeDeep, fontSize: fontScale(13), fontWeight: "800" },
++  regNote: {
++    color: Colors.textSecondary,
++    fontSize: fontScale(12.5),
++    lineHeight: fontScale(18),
++    textAlign: "center",
++    marginTop: moderateScale(14),
++  },
+   joinText: {
+     color: VU.white,
+     fontSize: fontScale(15),
+diff --git a/Stocksy_Server/config/competition.js b/Stocksy_Server/config/competition.js
+new file mode 100644
+index 0000000..fde347e
+--- /dev/null
++++ b/Stocksy_Server/config/competition.js
+@@ -0,0 +1,18 @@
++// config/competition.js
++//
++// The one competition we run right now. When Stocksy gets several events this
++// becomes a table; until then the key below tags every entry.
++
++const COMPETITION_KEY = "vu-2026";
++
++// Division A to G. To add a division, add its letter here: the app reads the
++// list from the server, so no app release is needed.
++const DIVISION_LETTERS = ["A", "B", "C", "D", "E", "F", "G"];
++
++const DIVISIONS = DIVISION_LETTERS.map((key) => ({ key, label: `Division ${key}` }));
++
++// The switches in app_features.
++const FLAGS = ["competition_visible", "competition_registration_open", "competition_enabled"];
++const STARTS_AT_KEY = "competition_starts_at";
++
++module.exports = { COMPETITION_KEY, DIVISION_LETTERS, DIVISIONS, FLAGS, STARTS_AT_KEY };
+diff --git a/Stocksy_Server/controllers/competitionController.js b/Stocksy_Server/controllers/competitionController.js
+new file mode 100644
+index 0000000..69617bb
+--- /dev/null
++++ b/Stocksy_Server/controllers/competitionController.js
+@@ -0,0 +1,30 @@
++const service = require("../services/competitionService");
++const { sendError } = require("../utils/errors");
++const logger = require("../utils/logger");
++
++// ── GET /api/competition/me ──────────────────────────────────────────────────
++// Status for the logged-in student: switches, countdown target, divisions to pick
++// from and their own entry (null until they join).
++async function getMyStatusHandler(req, res) {
++  res.set("Cache-Control", "no-store");
++  try {
++    return res.json(await service.getStatus(req.user.id));
++  } catch (err) {
++    return sendError(res, err, logger);
++  }
++}
++
++// ── POST /api/competition/join ───────────────────────────────────────────────
++// Body: { division: "A" }. The student is always the logged-in user: their name,
++// username and email come from the account, never from the request.
++// Safe to repeat: the same division again returns the same entry (created: false).
++async function joinHandler(req, res) {
++  try {
++    const { entry, created } = await service.join(req.user.id, req.body?.division);
++    return res.status(created ? 201 : 200).json({ entry, created });
++  } catch (err) {
++    return sendError(res, err, logger);
++  }
++}
++
++module.exports = { getMyStatusHandler, joinHandler };
+diff --git a/Stocksy_Server/controllers/configController.js b/Stocksy_Server/controllers/configController.js
+new file mode 100644
+index 0000000..05bde09
+--- /dev/null
++++ b/Stocksy_Server/controllers/configController.js
+@@ -0,0 +1,44 @@
++const features = require("../services/featureService");
++const logger = require("../utils/logger");
++
++// ── GET /api/config/features ─────────────────────────────────────────────────
++// PUBLIC (no login): the app asks on launch and when it comes back to the
++// foreground which features to show. Never cached by the phone or a proxy.
++//
++//   { success: true,
++//     features: { competition_visible, competition_registration_open, competition_enabled },
++//     settings: { competition_starts_at },   // ISO time, or null
++//     serverTime }                           // lets the app correct a wrong phone clock
++//
++// When the switches can't be read it answers 503 (never a guess), so the app
++// keeps what it last knew and holds competition actions back.
++async function getFeaturesHandler(req, res) {
++  res.set("Cache-Control", "no-store");
++  try {
++    const cfg = await features.getFeatures();
++    if (!cfg.ok) {
++      return res.status(503).json({
++        success: false,
++        message: "Settings are unavailable right now.",
++        code: "CONFIG_UNAVAILABLE",
++        severity: "error",
++      });
++    }
++    return res.json({
++      success: true,
++      features: cfg.features,
++      settings: cfg.settings,
++      serverTime: new Date().toISOString(),
++    });
++  } catch (err) {
++    logger.error(`[CONFIG] ${err.message}`);
++    return res.status(503).json({
++      success: false,
++      message: "Settings are unavailable right now.",
++      code: "CONFIG_UNAVAILABLE",
++      severity: "error",
++    });
++  }
++}
++
++module.exports = { getFeaturesHandler };
+diff --git a/Stocksy_Server/middleware/rateLimiter.js b/Stocksy_Server/middleware/rateLimiter.js
+index c6a1adc..4c8a77a 100644
+--- a/Stocksy_Server/middleware/rateLimiter.js
++++ b/Stocksy_Server/middleware/rateLimiter.js
+@@ -145,6 +145,16 @@ const leaderboardLimiter = rateLimit({
+   store: makeRedisStore('rl:leaderboard:'),
+ });
+ 
++// Competition status + join. Per USER, not per IP: a whole classroom shares one
++// campus WiFi address, so a per-IP limit would block students who did nothing wrong.
++const competitionLimiter = rateLimit({
++  ...baseOptions,
++  windowMs: 60 * 1000, // 1 min
++  max: 30,
++  keyGenerator: perUserKey,
++  store: makeRedisStore('rl:competition:'),
++});
++
+ // "Is this username free?" — used on the signup screen, BEFORE login, so this
+ // one can only count per IP. Generous because the app checks as you type.
+ const usernameCheckLimiter = rateLimit({
+@@ -163,5 +173,6 @@ module.exports = {
+   userSearchLimiter,
+   profileLimiter,
+   leaderboardLimiter,
++  competitionLimiter,
+   usernameCheckLimiter,
+ };
+diff --git a/Stocksy_Server/migrations/023_competition.sql b/Stocksy_Server/migrations/023_competition.sql
+new file mode 100644
+index 0000000..8e499fa
+--- /dev/null
++++ b/Stocksy_Server/migrations/023_competition.sql
+@@ -0,0 +1,55 @@
++-- =============================================================
++-- VU TRADING COMPETITION: feature switches + entries
++-- =============================================================
++--
++-- 1. app_features  — remote on/off switches (and a few dated settings) that the
++--    server hands to the app, so the competition can be turned on or off with one
++--    SQL statement: no app release, no rebuild, no server restart. The server
++--    caches the table for a few seconds (see services/featureService.js).
++--
++--    Three independent switches (all OFF until you turn them on):
++--      competition_visible            the card/page appear in the app
++--      competition_registration_open  students may join (and pick a division)
++--      competition_enabled            competition TRADING is allowed (a later stage)
++--
++--    Registration needs its own switch because students join in the workshops,
++--    BEFORE the contest starts, while trading must still be locked.
++--
++--    Settings use the `value` column. `competition_starts_at` is when the contest
++--    starts: the countdown in the app counts down to it, and registration closes
++--    at that moment (no late joiners). Change it with an UPDATE, e.g. to extend.
++--
++-- 2. competition_entries — who joined which competition and in which division.
++--    One row per student per competition: the UNIQUE key makes the database
++--    itself reject a double tap or a second device.
++--
++-- Run once against the Stocksy Postgres database, after 022_username_avatar.sql.
++-- Safe to re-run: it never overwrites switches you have already changed.
++
++CREATE TABLE IF NOT EXISTS app_features (
++  feature_key  VARCHAR(100) PRIMARY KEY,
++  enabled      BOOLEAN      NOT NULL DEFAULT FALSE,
++  value        TEXT,
++  updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
++);
++
++INSERT INTO app_features (feature_key, enabled, value) VALUES
++  ('competition_visible',           FALSE, NULL),
++  ('competition_registration_open', FALSE, NULL),
++  ('competition_enabled',           FALSE, NULL),
++  ('competition_starts_at',         TRUE,  '2026-11-18T12:00:00+05:30')
++ON CONFLICT (feature_key) DO NOTHING;
++
++CREATE TABLE IF NOT EXISTS competition_entries (
++  id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
++  user_id          UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
++  competition_key  VARCHAR(50)  NOT NULL,
++  division         VARCHAR(1)   NOT NULL CHECK (division ~ '^[A-Z]$'),
++  created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
++
++  UNIQUE (competition_key, user_id)
++);
++
++-- Division headcounts and the division leaderboard read this.
++CREATE INDEX IF NOT EXISTS idx_competition_entries_division
++  ON competition_entries (competition_key, division);
+diff --git a/Stocksy_Server/repositories/competitionRepository.js b/Stocksy_Server/repositories/competitionRepository.js
+new file mode 100644
+index 0000000..0760e07
+--- /dev/null
++++ b/Stocksy_Server/repositories/competitionRepository.js
+@@ -0,0 +1,36 @@
++const { pool } = require("../config/postgres");
++
++// Every read/write is scoped by user_id: one student can never see or change
++// another student's entry.
++
++const toEntry = (row) =>
++  row
++    ? { division: row.division, joinedAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at }
++    : null;
++
++// This user's entry in a competition, or null.
++const findEntry = async (userId, competitionKey) => {
++  const { rows } = await pool.query(
++    `SELECT division, created_at
++       FROM competition_entries
++      WHERE user_id = $1 AND competition_key = $2`,
++    [userId, competitionKey],
++  );
++  return toEntry(rows[0]);
++};
++
++// Create the entry. Returns it, or null when this user already has one (a double
++// tap, a second device, two requests racing): the UNIQUE key decides, so there
++// can never be two.
++const insertEntry = async (userId, competitionKey, division) => {
++  const { rows } = await pool.query(
++    `INSERT INTO competition_entries (user_id, competition_key, division)
++     VALUES ($1, $2, $3)
++     ON CONFLICT (competition_key, user_id) DO NOTHING
++     RETURNING division, created_at`,
++    [userId, competitionKey, division],
++  );
++  return toEntry(rows[0]);
++};
++
++module.exports = { findEntry, insertEntry };
+diff --git a/Stocksy_Server/repositories/featureRepository.js b/Stocksy_Server/repositories/featureRepository.js
+new file mode 100644
+index 0000000..5ff4c67
+--- /dev/null
++++ b/Stocksy_Server/repositories/featureRepository.js
+@@ -0,0 +1,11 @@
++const { pool } = require("../config/postgres");
++
++// Every row of app_features (a handful). Read by featureService, which caches it.
++const getAll = async () => {
++  const { rows } = await pool.query(
++    `SELECT feature_key, enabled, value FROM app_features`,
++  );
++  return rows;
++};
++
++module.exports = { getAll };
+diff --git a/Stocksy_Server/routes/competition.js b/Stocksy_Server/routes/competition.js
+new file mode 100644
+index 0000000..75719fb
+--- /dev/null
++++ b/Stocksy_Server/routes/competition.js
+@@ -0,0 +1,16 @@
++/**
++ * routes/competition.js
++ * Mounted in server.js: app.use('/api/competition', require('./routes/competition'));
++ */
++const express = require("express");
++const router = express.Router();
++const { protect } = require("../middleware/auth");
++const { competitionLimiter } = require("../middleware/rateLimiter");
++const { getMyStatusHandler, joinHandler } = require("../controllers/competitionController");
++
++// GET  /api/competition/me   — my status: switches, countdown target, divisions, my entry.
++// POST /api/competition/join — save my division. Body { division: "A" }.
++router.get("/me", protect, competitionLimiter, getMyStatusHandler);
++router.post("/join", protect, competitionLimiter, joinHandler);
++
++module.exports = router;
+diff --git a/Stocksy_Server/routes/config.js b/Stocksy_Server/routes/config.js
+new file mode 100644
+index 0000000..db4247e
+--- /dev/null
++++ b/Stocksy_Server/routes/config.js
+@@ -0,0 +1,12 @@
++/**
++ * routes/config.js
++ * Mounted in server.js: app.use('/api/config', require('./routes/config'));
++ */
++const express = require("express");
++const router = express.Router();
++const { getFeaturesHandler } = require("../controllers/configController");
++
++// GET /api/config/features — which features the app should show. Public.
++router.get("/features", getFeaturesHandler);
++
++module.exports = router;
+diff --git a/Stocksy_Server/server.js b/Stocksy_Server/server.js
+index 5ff74db..399b5c7 100644
+--- a/Stocksy_Server/server.js
++++ b/Stocksy_Server/server.js
+@@ -103,6 +103,8 @@ app.use("/api/predictions", require("./routes/predictions"));
+ app.use("/api/streak", require("./routes/streak"));
+ app.use("/api/stock-of-the-day", require("./routes/stockOfTheDay"));
+ app.use("/api/app", require("./routes/appVersion"));   // <-- add this
++app.use("/api/config", require("./routes/config"));           // remote feature switches (public)
++app.use("/api/competition", require("./routes/competition")); // VU Trading Competition
+ 
+ // ─── Health check — hit this first from the app to confirm connectivity ───────
+ // From the app: fetch('http://<YOUR_LAN_IP>:5000/health').then(r => r.text()).then(console.log)
+diff --git a/Stocksy_Server/services/competitionService.js b/Stocksy_Server/services/competitionService.js
+new file mode 100644
+index 0000000..57fd2fc
+--- /dev/null
++++ b/Stocksy_Server/services/competitionService.js
+@@ -0,0 +1,108 @@
++/**
++ * services/competitionService.js
++ *
++ * VU Trading Competition: registration (stage 3). A student picks a division and
++ * the server saves it. The contest wallet, trading and scoring come in later
++ * stages.
++ *
++ * The server decides everything. Hiding the card in the app does not close these
++ * rules: every join is checked here on its own, even if someone calls the API by
++ * hand. A join is allowed only when
++ *   - the switches could be read (otherwise fail closed),
++ *   - competition_visible AND competition_registration_open are ON,
++ *   - the contest has not started yet (registration closes at competition_starts_at),
++ *   - the division is one of the real divisions.
++ *
++ * One entry per student: the database's UNIQUE key is the final word, so a double
++ * tap or a second device gives the same single entry, never two.
++ *
++ * Built by a factory so tests can hand it fake repositories and a fake clock.
++ */
++
++const { ValidationError, ConflictError, CompetitionClosedError } = require("../utils/errors");
++const { STARTS_AT_KEY } = require("../config/competition");
++
++function createCompetitionService({ repo, features, competitionKey, divisions, now = () => new Date() }) {
++  const validKeys = new Set(divisions.map((d) => d.key));
++
++  const normalizeDivision = (raw) => String(raw ?? "").trim().toUpperCase();
++
++  // Is registration allowed right now? { open, startsAt }
++  function registrationState(cfg) {
++    const startsAt = cfg.settings[STARTS_AT_KEY]; // ISO or null
++    const open =
++      cfg.ok &&
++      cfg.features.competition_visible === true &&
++      cfg.features.competition_registration_open === true &&
++      !!startsAt &&
++      now().getTime() < Date.parse(startsAt); // no date set = closed (fail closed)
++    return { open, startsAt };
++  }
++
++  /**
++   * Everything the page needs in one call: the switches, the countdown target,
++   * the divisions to pick from and this student's own entry (or null).
++   * `serverTime` lets the app correct for a wrong phone clock.
++   */
++  async function getStatus(userId) {
++    const cfg = await features.getFeatures();
++    const entry = await repo.findEntry(userId, competitionKey); // reading your own entry is always fine
++    const { open, startsAt } = registrationState(cfg);
++    return {
++      visible: cfg.ok && cfg.features.competition_visible === true,
++      registrationOpen: open,
++      startsAt,
++      serverTime: now().toISOString(),
++      divisions,
++      entry,
++    };
++  }
++
++  /** Save the student's division. Returns { entry, created }. */
++  async function join(userId, rawDivision) {
++    const division = normalizeDivision(rawDivision);
++    if (!validKeys.has(division)) throw new ValidationError("Please select your division.");
++
++    const cfg = await features.requireReadable(); // throws when the switches can't be read
++
++    const { open, startsAt } = registrationState(cfg);
++    if (!open) {
++      const started = startsAt && now().getTime() >= Date.parse(startsAt);
++      throw new CompetitionClosedError(
++        started
++          ? "Registration has closed because the contest has started."
++          : "Registration is not open right now.",
++        "REGISTRATION_CLOSED",
++      );
++    }
++
++    const inserted = await repo.insertEntry(userId, competitionKey, division);
++    if (inserted) return { entry: inserted, created: true };
++
++    // They already have an entry (double tap, second device, a race).
++    const existing = await repo.findEntry(userId, competitionKey);
++    if (existing && existing.division === division) return { entry: existing, created: false };
++    throw new ConflictError(
++      existing ? `You have already joined Division ${existing.division}.` : "You have already joined.",
++      "ALREADY_JOINED",
++    );
++  }
++
++  return { getStatus, join };
++}
++
++let _service = null;
++const service = () =>
++  (_service ||= createCompetitionService({
++    repo: require("../repositories/competitionRepository"),
++    features: require("./featureService"),
++    ...(({ COMPETITION_KEY, DIVISIONS }) => ({ competitionKey: COMPETITION_KEY, divisions: DIVISIONS }))(
++      require("../config/competition"),
++    ),
++  }));
++
++module.exports = {
++  createCompetitionService,
++  getStatus: (...a) => service().getStatus(...a),
++  join: (...a) => service().join(...a),
++};
+diff --git a/Stocksy_Server/services/featureService.js b/Stocksy_Server/services/featureService.js
+new file mode 100644
+index 0000000..491f98b
+--- /dev/null
++++ b/Stocksy_Server/services/featureService.js
+@@ -0,0 +1,90 @@
++/**
++ * services/featureService.js
++ *
++ * Remote feature switches, read from the app_features table.
++ *
++ * Postgres is the single source of truth: flip a row with SQL and the app and the
++ * server both follow, with no release, rebuild or restart. To keep 200+ students
++ * resuming the app from hammering the database, the table is cached in memory for
++ * a few seconds (FEATURE_CACHE_SECONDS, default 10), and concurrent reads while the
++ * cache is empty share ONE query.
++ *
++ * FAILS CLOSED: if the table cannot be read, every switch reads as OFF and `ok` is
++ * false. A stale cache is never served past its lifetime, so a database outage can
++ * never leave the competition "on" by accident.
++ *
++ * Built by a factory so tests can hand it a fake repository and a fake clock.
++ */
++
++const logger = require("../utils/logger");
++const { FeatureUnavailableError } = require("../utils/errors");
++const { FLAGS, STARTS_AT_KEY } = require("../config/competition");
++
++const DEFAULT_TTL_MS = Math.max(0, Number(process.env.FEATURE_CACHE_SECONDS ?? 10)) * 1000;
++
++const allOff = () => Object.fromEntries(FLAGS.map((f) => [f, false]));
++
++// A valid date as an ISO string, or null (a missing or garbled value = no date).
++const toIso = (value) => {
++  if (!value) return null;
++  const t = Date.parse(value);
++  return Number.isNaN(t) ? null : new Date(t).toISOString();
++};
++
++function build(rows) {
++  const byKey = new Map(rows.map((r) => [r.feature_key, r]));
++  const features = allOff();
++  for (const flag of FLAGS) features[flag] = byKey.get(flag)?.enabled === true; // missing row = off
++  const settings = { [STARTS_AT_KEY]: toIso(byKey.get(STARTS_AT_KEY)?.value) };
++  return { ok: true, features, settings };
++}
++
++const failed = () => ({ ok: false, features: allOff(), settings: { [STARTS_AT_KEY]: null } });
++
++function createFeatureService(repo, { ttlMs = DEFAULT_TTL_MS, now = () => Date.now() } = {}) {
++  let cache = null; // { at, value }
++  let inflight = null;
++
++  /** { ok, features: {flag: bool}, settings: { competition_starts_at: ISO|null } } */
++  async function getFeatures() {
++    if (cache && now() - cache.at < ttlMs) return cache.value;
++    if (inflight) return inflight;
++
++    inflight = (async () => {
++      try {
++        const value = build(await repo.getAll());
++        cache = { at: now(), value };
++        return value;
++      } catch (err) {
++        logger.error(`[FEATURES] Could not read app_features, failing closed: ${err.message}`);
++        cache = null;
++        return failed();
++      } finally {
++        inflight = null;
++      }
++    })();
++    return inflight;
++  }
++
++  /** Throws FeatureUnavailableError when the switches can't be read. */
++  async function requireReadable() {
++    const cfg = await getFeatures();
++    if (!cfg.ok) throw new FeatureUnavailableError();
++    return cfg;
++  }
++
++  function clearCache() {
++    cache = null;
++  }
++
++  return { getFeatures, requireReadable, clearCache };
++}
++
++let _service = null;
++const service = () => (_service ||= createFeatureService(require("../repositories/featureRepository")));
++
++module.exports = {
++  createFeatureService,
++  getFeatures: (...a) => service().getFeatures(...a),
++  requireReadable: (...a) => service().requireReadable(...a),
++};
+diff --git a/Stocksy_Server/tests/competition.test.js b/Stocksy_Server/tests/competition.test.js
+new file mode 100644
+index 0000000..3c7bbb6
+--- /dev/null
++++ b/Stocksy_Server/tests/competition.test.js
+@@ -0,0 +1,240 @@
++// VU Trading Competition (stage 3): the feature switches and registration.
++// No database, no real clock: the repositories are in-memory stand-ins.
++const test = require('node:test');
++const assert = require('node:assert/strict');
++
++const { createFeatureService } = require('../services/featureService');
++const { createCompetitionService } = require('../services/competitionService');
++const { DIVISIONS } = require('../config/competition');
++const { mapErrorToResponse } = require('../utils/errors');
++
++const STARTS = '2026-11-18T12:00:00+05:30';
++const ist = (d, hhmm = '12:00') => new Date(`${d}T${hhmm}:00+05:30`);
++
++// A fake app_features table.
++const rows = (over = {}) => {
++  const base = {
++    competition_visible: false,
++    competition_registration_open: false,
++    competition_enabled: false,
++  };
++  const flags = { ...base, ...over };
++  return [
++    ...Object.entries(flags).map(([feature_key, enabled]) => ({ feature_key, enabled, value: null })),
++    { feature_key: 'competition_starts_at', enabled: true, value: STARTS },
++  ];
++};
++
++function fakeFeatureRepo(initial) {
++  const repo = {
++    data: initial,
++    fail: false,
++    calls: 0,
++    async getAll() {
++      repo.calls += 1;
++      if (repo.fail) throw new Error('connection refused');
++      return repo.data;
++    },
++  };
++  return repo;
++}
++
++function fakeEntryRepo() {
++  const entries = new Map(); // userId -> { division, joinedAt }
++  return {
++    entries,
++    async findEntry(userId) { return entries.get(userId) || null; },
++    async insertEntry(userId, _key, division) {
++      if (entries.has(userId)) return null; // the UNIQUE key
++      const e = { division, joinedAt: new Date().toISOString() };
++      entries.set(userId, e);
++      return e;
++    },
++  };
++}
++
++function setup({ flags = {}, at = ist('2026-11-16', '10:00'), ttlMs = 0 } = {}) {
++  const featureRepo = fakeFeatureRepo(rows(flags));
++  const clock = { t: at };
++  const features = createFeatureService(featureRepo, { ttlMs, now: () => clock.t.getTime() });
++  const repo = fakeEntryRepo();
++  const service = createCompetitionService({
++    repo, features, competitionKey: 'vu-2026', divisions: DIVISIONS, now: () => clock.t,
++  });
++  return { featureRepo, features, repo, service, clock };
++}
++
++const OPEN = { competition_visible: true, competition_registration_open: true };
++
++// ── feature switches ────────────────────────────────────────────────────────
++test('all switches start OFF, and a missing row also reads as OFF', async () => {
++  const { features, featureRepo } = setup();
++  const cfg = await features.getFeatures();
++  assert.equal(cfg.ok, true);
++  assert.deepEqual(cfg.features, {
++    competition_visible: false,
++    competition_registration_open: false,
++    competition_enabled: false,
++  });
++  featureRepo.data = []; // table emptied
++  features.clearCache();
++  const empty = await features.getFeatures();
++  assert.equal(empty.features.competition_visible, false);
++  assert.equal(empty.settings.competition_starts_at, null);
++});
++
++test('a switch flipped in the database is seen without a restart (cache expires)', async () => {
++  const { features, featureRepo, clock } = setup({ ttlMs: 10_000 });
++  assert.equal((await features.getFeatures()).features.competition_visible, false);
++  featureRepo.data = rows({ competition_visible: true });
++  assert.equal((await features.getFeatures()).features.competition_visible, false); // still cached
++  clock.t = new Date(clock.t.getTime() + 11_000);
++  assert.equal((await features.getFeatures()).features.competition_visible, true); // refreshed
++});
++
++test('the cache stops many callers hammering the database', async () => {
++  const { features, featureRepo } = setup({ ttlMs: 10_000 });
++  await Promise.all(Array.from({ length: 50 }, () => features.getFeatures()));
++  await features.getFeatures();
++  assert.equal(featureRepo.calls, 1);
++});
++
++test('FAIL CLOSED: if the database is down every switch is OFF, even after it was ON', async () => {
++  const { features, featureRepo, clock } = setup({ flags: OPEN, ttlMs: 10_000 });
++  assert.equal((await features.getFeatures()).features.competition_visible, true);
++  featureRepo.fail = true;
++  clock.t = new Date(clock.t.getTime() + 11_000); // cache expired: no stale "ON" is served
++  const cfg = await features.getFeatures();
++  assert.equal(cfg.ok, false);
++  assert.equal(cfg.features.competition_visible, false);
++  assert.equal(cfg.features.competition_registration_open, false);
++  await assert.rejects(() => features.requireReadable(), { name: 'FeatureUnavailableError' });
++});
++
++test('a garbled start date reads as no date', async () => {
++  const { features, featureRepo } = setup();
++  featureRepo.data = [{ feature_key: 'competition_starts_at', enabled: true, value: 'not a date' }];
++  assert.equal((await features.getFeatures()).settings.competition_starts_at, null);
++});
++
++// ── joining ─────────────────────────────────────────────────────────────────
++test('a student joins and the division is saved', async () => {
++  const { service, repo } = setup({ flags: OPEN });
++  const r = await service.join('u1', 'c');
++  assert.equal(r.created, true);
++  assert.equal(r.entry.division, 'C'); // trimmed + upper-cased
++  assert.equal(repo.entries.get('u1').division, 'C');
++});
++
++test('a double tap or a second device gives one entry, not two', async () => {
++  const { service, repo } = setup({ flags: OPEN });
++  const results = await Promise.all([service.join('u1', 'B'), service.join('u1', 'B')]);
++  assert.equal(repo.entries.size, 1);
++  assert.deepEqual(results.map((r) => r.entry.division), ['B', 'B']);
++  assert.equal(results.filter((r) => r.created).length, 1);
++});
++
++test('joining again with a DIFFERENT division is refused and keeps the first', async () => {
++  const { service, repo } = setup({ flags: OPEN });
++  await service.join('u1', 'B');
++  await assert.rejects(() => service.join('u1', 'D'), (e) => {
++    assert.equal(e.name, 'ConflictError');
++    assert.equal(e.code, 'ALREADY_JOINED');
++    assert.match(e.message, /Division B/);
++    return true;
++  });
++  assert.equal(repo.entries.get('u1').division, 'B');
++});
++
++test('only real divisions are accepted (A to G)', async () => {
++  const { service, repo } = setup({ flags: OPEN });
++  for (const bad of ['', 'Z', 'H', 'AA', '1', null, undefined, '<script>']) {
++    await assert.rejects(() => service.join('u1', bad), { name: 'ValidationError' });
++  }
++  for (const good of 'ABCDEFG') await service.join(`u-${good}`, good);
++  assert.equal(repo.entries.size, 7);
++});
++
++test('NOT allowed while the competition is hidden or registration is closed', async () => {
++  for (const flags of [
++    {},
++    { competition_visible: true },
++    { competition_registration_open: true },
++    { competition_enabled: true }, // trading switch alone does not open registration
++  ]) {
++    const { service, repo } = setup({ flags });
++    await assert.rejects(() => service.join('u1', 'A'), { name: 'CompetitionClosedError', code: 'REGISTRATION_CLOSED' });
++    assert.equal(repo.entries.size, 0);
++  }
++});
++
++test('registration closes the moment the contest starts: no late joiners', async () => {
++  const { service, clock } = setup({ flags: OPEN, at: ist('2026-11-18', '11:59') });
++  await service.join('u1', 'A'); // one minute before
++  clock.t = ist('2026-11-18', '12:00');
++  await assert.rejects(() => service.join('u2', 'A'), { code: 'REGISTRATION_CLOSED' });
++});
++
++test('no start date set = closed (fail closed)', async () => {
++  const { service, featureRepo, features } = setup({ flags: OPEN });
++  featureRepo.data = featureRepo.data.filter((r) => r.feature_key !== 'competition_starts_at');
++  features.clearCache();
++  await assert.rejects(() => service.join('u1', 'A'), { code: 'REGISTRATION_CLOSED' });
++});
++
++test('FAIL CLOSED: a database outage blocks joining and creates nothing', async () => {
++  const { service, featureRepo, repo } = setup({ flags: OPEN });
++  featureRepo.fail = true;
++  await assert.rejects(() => service.join('u1', 'A'), { name: 'FeatureUnavailableError' });
++  assert.equal(repo.entries.size, 0);
++});
++
++test('an extended start date (changed in the database) keeps registration open', async () => {
++  const { service, featureRepo, features, clock } = setup({ flags: OPEN, at: ist('2026-11-18', '13:00') });
++  await assert.rejects(() => service.join('u1', 'A'), { code: 'REGISTRATION_CLOSED' });
++  featureRepo.data = rows(OPEN).map((r) => (r.feature_key === 'competition_starts_at' ? { ...r, value: '2026-11-19T12:00:00+05:30' } : r));
++  features.clearCache();
++  assert.equal((await service.join('u1', 'A')).created, true);
++});
++
++// ── status for the page ─────────────────────────────────────────────────────
++test('status shows the divisions, the countdown target and my entry', async () => {
++  const { service } = setup({ flags: OPEN });
++  let st = await service.getStatus('u1');
++  assert.equal(st.visible, true);
++  assert.equal(st.registrationOpen, true);
++  assert.equal(st.entry, null);
++  assert.equal(st.startsAt, '2026-11-18T06:30:00.000Z'); // 12:00 IST
++  assert.deepEqual(st.divisions.map((d) => d.key), ['A', 'B', 'C', 'D', 'E', 'F', 'G']);
++  assert.ok(st.serverTime);
++  await service.join('u1', 'E');
++  st = await service.getStatus('u1');
++  assert.equal(st.entry.division, 'E');
++});
++
++test('I can still see my own entry after registration closes or the card is hidden', async () => {
++  const { service, featureRepo, features } = setup({ flags: OPEN });
++  await service.join('u1', 'F');
++  featureRepo.data = rows({}); // everything switched off
++  features.clearCache();
++  const st = await service.getStatus('u1');
++  assert.equal(st.visible, false);
++  assert.equal(st.registrationOpen, false);
++  assert.equal(st.entry.division, 'F'); // history is never hidden
++});
++
++test("status never shows someone else's entry", async () => {
++  const { service } = setup({ flags: OPEN });
++  await service.join('u1', 'A');
++  assert.equal((await service.getStatus('u2')).entry, null);
++});
++
++// ── error mapping ───────────────────────────────────────────────────────────
++test('errors map to the standard API contract', () => {
++  const closed = mapErrorToResponse(new (require('../utils/errors').CompetitionClosedError)('x', 'REGISTRATION_CLOSED'));
++  assert.equal(closed.status, 403);
++  assert.equal(closed.body.code, 'REGISTRATION_CLOSED');
++  const down = mapErrorToResponse(new (require('../utils/errors').FeatureUnavailableError)());
++  assert.equal(down.status, 503);
++  assert.equal(down.body.code, 'FEATURE_UNAVAILABLE');
++});
+diff --git a/Stocksy_Server/utils/errors.js b/Stocksy_Server/utils/errors.js
+index 9248e9f..4890575 100644
+--- a/Stocksy_Server/utils/errors.js
++++ b/Stocksy_Server/utils/errors.js
+@@ -47,6 +47,23 @@ class IdempotencyConflictError extends Error {
+     this.name = 'IdempotencyConflictError';
+   }
+ }
++class CompetitionClosedError extends Error {
++  // The competition (or its registration) is switched off or over. `code` lets the
++  // app show the right message instead of parsing English.
++  constructor(message, code = 'COMPETITION_CLOSED') {
++    super(message);
++    this.name = 'CompetitionClosedError';
++    this.code = code;
++  }
++}
++class FeatureUnavailableError extends Error {
++  // The switches could not be read (database down). Competition actions fail
++  // CLOSED: nothing is allowed until the switches can be read again.
++  constructor(message) {
++    super(message || 'This is unavailable right now. Please try again shortly.');
++    this.name = 'FeatureUnavailableError';
++  }
++}
+ class SessionExpiredError extends Error {
+   constructor() { super('Your session has expired'); this.name = 'SessionExpiredError'; }
+ }
+@@ -90,6 +107,12 @@ function mapErrorToResponse(err) {
+   if (err instanceof ConflictError)
+     return { status: 409, body: { message: err.message, code: err.code, severity: 'error' } };
+ 
++  if (err instanceof CompetitionClosedError)
++    return { status: 403, body: { message: err.message, code: err.code, severity: 'warning' } };
++
++  if (err instanceof FeatureUnavailableError)
++    return { status: 503, body: { message: err.message, code: 'FEATURE_UNAVAILABLE', severity: 'error' } };
++
+   if (err instanceof UnauthorizedError)
+     return { status: 401, body: { message: err.message, code: 'UNAUTHORIZED', severity: 'error' } };
+ 
+@@ -123,6 +146,8 @@ module.exports = {
+   NotFoundError,
+   UnauthorizedError,
+   ConflictError,
++  CompetitionClosedError,
++  FeatureUnavailableError,
+   SessionExpiredError,
+   IdempotencyConflictError,
+   mapErrorToResponse,
+-- 
+2.43.0
+
