@@ -1,7 +1,7 @@
 From fb925804de63d0b57e9dfe28e0cd9228ab5d4f90 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sat, 7 Nov 2026 13:28:13 +0000
-Subject: [PATCH] Add VU Trading Competition card to Daily Challenge page
+Subject: [PATCH 1/2] Add VU Trading Competition card to Daily Challenge page
  (frontend only)
 
 ---
@@ -428,6 +428,707 @@ index 3b81115..7e36538 100644
  });
  
  export default DailyChallengePage;
+-- 
+2.43.0
+
+
+From e7498825e246b91cce022a01f09d48840ab1d87c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 7 Nov 2026 13:38:46 +0000
+Subject: [PATCH 2/2] VU Competition page: autofilled details, division A-G
+ dropdown, overview and rules (frontend only)
+
+---
+ Stocksy_Mobile/App.js                         |   2 +
+ .../src/components/VuCompetitionCard.js       |  21 +-
+ Stocksy_Mobile/src/constants/vuCompetition.js |  84 +++
+ .../src/pages/DailyChallengePage.js           |   4 +-
+ Stocksy_Mobile/src/pages/VuCompetitionPage.js | 503 ++++++++++++++++++
+ 5 files changed, 602 insertions(+), 12 deletions(-)
+ create mode 100644 Stocksy_Mobile/src/constants/vuCompetition.js
+ create mode 100644 Stocksy_Mobile/src/pages/VuCompetitionPage.js
+
+diff --git a/Stocksy_Mobile/App.js b/Stocksy_Mobile/App.js
+index eebddcc..6234d92 100644
+--- a/Stocksy_Mobile/App.js
++++ b/Stocksy_Mobile/App.js
+@@ -71,6 +71,7 @@ import AlertsPage from "./src/pages/AlertsPage";
+ import WatchlistPage from "./src/pages/WatchlistPage";
+ import StreakPage from "./src/pages/StreakPage";
+ import DailyChallengePage from "./src/pages/DailyChallengePage";
++import VuCompetitionPage from "./src/pages/VuCompetitionPage";
+ import LeaderboardPage from "./src/pages/LeaderboardPage";
+ import FollowListPage from "./src/pages/FollowListPage";
+ import EditProfilePage from "./src/pages/EditProfilePage";
+@@ -343,6 +344,7 @@ function AppContent() {
+               name="DailyChallenge"
+               component={DailyChallengePage}
+             />
++            <Stack.Screen name="VuCompetition" component={VuCompetitionPage} />
+             <Stack.Screen name="StockOfTheDay" component={StockOfTheDayPage} />
+             <Stack.Screen
+               name="StockFaceOffIntro"
+diff --git a/Stocksy_Mobile/src/components/VuCompetitionCard.js b/Stocksy_Mobile/src/components/VuCompetitionCard.js
+index 708d032..fa40ebb 100644
+--- a/Stocksy_Mobile/src/components/VuCompetitionCard.js
++++ b/Stocksy_Mobile/src/components/VuCompetitionCard.js
+@@ -15,21 +15,22 @@ import Svg, {
+ import { Ionicons } from "@expo/vector-icons";
+ 
+ import { Shadows, fontScale, moderateScale } from "../theme";
++import { VU } from "../constants/vuCompetition";
+ 
+-// ── VU college colours: Persian blue, orange and white ───────────────────────
+-const PERSIAN_BLUE = "#1C39BB";
+-const PERSIAN_BLUE_DEEP = "#12238A";
+-const PERSIAN_BLUE_LIGHT = "#3A5BE0";
+-const ORANGE = "#F97316";
+-const ORANGE_LIGHT = "#FDBA74";
+-const ORANGE_DEEP = "#EA580C";
+-const WHITE = "#FFFFFF";
++// ── VU college colours: Persian blue, orange and white (shared with the page) ──
++const PERSIAN_BLUE = VU.blue;
++const PERSIAN_BLUE_DEEP = VU.blueDeep;
++const PERSIAN_BLUE_LIGHT = VU.blueLight;
++const ORANGE = VU.orange;
++const ORANGE_LIGHT = VU.orangeLight;
++const ORANGE_DEEP = VU.orangeDeep;
++const WHITE = VU.white;
+ 
+ // The native animation driver doesn't exist on web.
+ const NATIVE = Platform.OS !== "web";
+ 
+ /** Honour the device's "reduce motion" setting: everything then stays still. */
+-function useReduceMotion() {
++export function useReduceMotion() {
+   const [reduce, setReduce] = useState(false);
+   useEffect(() => {
+     let alive = true;
+@@ -166,7 +167,7 @@ function Sparkle({ left, top, size, loop, paused }) {
+  * Scene on the left of the card: a trophy flanked by two candlesticks, all
+  * floating, tilting and "breathing" on their own rhythm, with a soft glow behind.
+  */
+-function CompetitionScene({ paused }) {
++export function CompetitionScene({ paused }) {
+   const s = moderateScale;
+   const trophy = useLoop(3200, 0, paused);
+   const candleA = useLoop(2700, 400, paused);
+diff --git a/Stocksy_Mobile/src/constants/vuCompetition.js b/Stocksy_Mobile/src/constants/vuCompetition.js
+new file mode 100644
+index 0000000..047b00c
+--- /dev/null
++++ b/Stocksy_Mobile/src/constants/vuCompetition.js
+@@ -0,0 +1,84 @@
++// VU Trading Competition: shared look and content.
++// Source of truth for the rules text is the "VU Trading Competition: Build Plan"
++// (locked decisions). Open questions (fees, prizes, exact tie-break, whether a loss
++// cancels earlier wins) are deliberately NOT stated here until they are decided.
++
++// College colours: Persian blue, orange and white.
++export const VU = {
++  blue: "#1C39BB",
++  blueDeep: "#12238A",
++  blueLight: "#3A5BE0",
++  orange: "#F97316",
++  orangeLight: "#FDBA74",
++  orangeDeep: "#EA580C",
++  white: "#FFFFFF",
++};
++
++// Division A to G. To add another division later, just add its letter here.
++export const DIVISIONS = ["A", "B", "C", "D", "E", "F", "G"].map((letter) => ({
++  key: letter,
++  label: `Division ${letter}`,
++}));
++
++export const OVERVIEW = {
++  text:
++    "An intraday trading contest for VU students. Everyone gets the same virtual ₹5,00,000 wallet, " +
++    "trades on live market prices and is ranked on profit after all charges. " +
++    "Attend your division's workshop, join here, then trade your way up the leaderboard.",
++  facts: [
++    { icon: "wallet", value: "₹5,00,000", label: "Virtual wallet" },
++    { icon: "flash", value: "Intraday", label: "MIS orders only" },
++    { icon: "time", value: "3:30 PM", label: "Contest ends" },
++  ],
++  steps: [
++    { title: "Attend the workshop", body: "One division per slot." },
++    { title: "Join with your division", body: "Before the contest starts." },
++    { title: "Trade and climb", body: "Ends 3:30 PM the day after it starts." },
++  ],
++  note: "Exact dates will be shared at your workshop.",
++};
++
++export const RULES = [
++  {
++    title: "Entry",
++    icon: "ticket",
++    items: [
++      "Only students of the VU divisions can enter. Pick your own division.",
++      "One entry per student and one account per person. Duplicate accounts can be disqualified.",
++      "Sign up, verify your email and join before the contest starts. Registration closes when the contest starts, so there are no late joiners.",
++      "Your contest wallet appears after the workshop and stays locked until the contest starts.",
++    ],
++  },
++  {
++    title: "Trading",
++    icon: "trending-up",
++    items: [
++      "Intraday (MIS) orders only. Delivery (CNC) orders are rejected on the contest wallet.",
++      "Everyone gets the same ₹5,00,000 virtual wallet. No add-funds, no transfers, no edits.",
++      "All stocks on the app can be traded.",
++      "Orders are accepted only inside the contest window, on market days.",
++      "Open intraday positions are squared off automatically at 3:20 PM each trading day.",
++      "Fills include a small random slippage of up to 0.05% on each side. It applies to everyone.",
++    ],
++  },
++  {
++    title: "Scoring",
++    icon: "podium",
++    items: [
++      "Your score is your profit after brokerage, STT and all other charges, on both the buy and the sell. ₹1 = 1 point.",
++      "No negative points: your score never goes below 0. Ranking still uses your true net profit, so students with losses stay in order.",
++      "Very small trades (for example 1 share) cost about ₹12 in charges, so they usually can't score.",
++      "The leaderboard (global, division and friends) refreshes every 30–60 seconds.",
++    ],
++  },
++  {
++    title: "After the contest",
++    icon: "flag",
++    items: [
++      "The contest ends at 3:30 PM the day after it starts, once the 3:20 PM square-off is done. The final ranking is then locked.",
++      "The contest wallet is cleared. Your points, badges, streaks, transaction history and journal stay.",
++      "Contest trades carry a glowing “VU Trade Competition” badge in history, journal and alerts.",
++      "Organisers can pause, extend or void the contest if the price feed fails, and can disqualify unfair play.",
++    ],
++  },
++];
+diff --git a/Stocksy_Mobile/src/pages/DailyChallengePage.js b/Stocksy_Mobile/src/pages/DailyChallengePage.js
+index 7e36538..1229e3d 100644
+--- a/Stocksy_Mobile/src/pages/DailyChallengePage.js
++++ b/Stocksy_Mobile/src/pages/DailyChallengePage.js
+@@ -113,10 +113,10 @@ const DailyChallengePage = ({ navigation }) => {
+       >
+         {tab === "challenge" ? (
+           <>
+-            {/* VU Trading Competition banner (UI only for now: stage 2 wires it up) */}
++            {/* VU Trading Competition banner: opens the overview, rules and join page */}
+             <VuCompetitionCard
+               style={styles.vuCard}
+-              onPress={comingSoon("VU Trading Competition")}
++              onPress={() => navigation.navigate("VuCompetition")}
+             />
+             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
+             <View style={styles.widgetRow}>
+diff --git a/Stocksy_Mobile/src/pages/VuCompetitionPage.js b/Stocksy_Mobile/src/pages/VuCompetitionPage.js
+new file mode 100644
+index 0000000..b07e539
+--- /dev/null
++++ b/Stocksy_Mobile/src/pages/VuCompetitionPage.js
+@@ -0,0 +1,503 @@
++import React, { useEffect, useState } from "react";
++import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
++import { SafeAreaView } from "react-native-safe-area-context";
++import { LinearGradient } from "expo-linear-gradient";
++import { Ionicons } from "@expo/vector-icons";
++import AsyncStorage from "@react-native-async-storage/async-storage";
++
++import { CompetitionScene, useReduceMotion } from "../components/VuCompetitionCard";
++import { getMyProfile } from "../../services/profileService";
++import { showToast } from "../../services/uiBridge";
++import { DIVISIONS, OVERVIEW, RULES, VU } from "../constants/vuCompetition";
++import { Colors, Shadows, fontScale, moderateScale } from "../theme";
++
++/**
++ * VU Trading Competition page (opened from the card on Daily Challenge).
++ *
++ * Frontend only for now (stage 2):
++ *   - the student's name, username and email are filled in from the account
++ *     (locked: they identify the account, so this page never edits them)
++ *   - a Division dropdown, A to G
++ *   - the competition overview and rules
++ * Joining is not wired to a server yet (stage 3), so "Join competition" only
++ * checks that a division is picked and then tells the person it is coming.
++ */
++const VuCompetitionPage = ({ navigation }) => {
++  const reduceMotion = useReduceMotion();
++
++  const [loading, setLoading] = useState(true);
++  const [fullName, setFullName] = useState("");
++  const [username, setUsername] = useState("");
++  const [email, setEmail] = useState("");
++
++  const [division, setDivision] = useState(null); // a DIVISIONS key, or null
++  const [open, setOpen] = useState(false);
++  const [triedJoin, setTriedJoin] = useState(false);
++
++  const goBack = () => {
++    if (navigation.canGoBack()) navigation.goBack();
++    else navigation.navigate("MainTabs");
++  };
++
++  // Autofill: the copy stored on the phone first (instant), then the server.
++  useEffect(() => {
++    let alive = true;
++    (async () => {
++      try {
++        const raw = await AsyncStorage.getItem("user");
++        if (raw && alive) {
++          const stored = JSON.parse(raw);
++          setFullName(stored.fullName || "");
++          setEmail(stored.email || "");
++          setUsername(stored.usernameSet ? stored.username || "" : "");
++        }
++      } catch {
++        /* the server answer below still fills the form */
++      }
++      try {
++        const me = await getMyProfile();
++        if (alive) {
++          if (me.fullName) setFullName(me.fullName);
++          if (me.username) setUsername(me.username);
++        }
++      } catch {
++        /* offline: the stored copy stays */
++      }
++      if (alive) setLoading(false);
++    })();
++    return () => {
++      alive = false;
++    };
++  }, []);
++
++  const selected = DIVISIONS.find((d) => d.key === division);
++  const divisionError = triedJoin && !division;
++
++  const handleJoin = () => {
++    setTriedJoin(true);
++    if (!division) {
++      showToast("Please select your division first", "warning");
++      return;
++    }
++    // Stage 3 will create the entry and the contest wallet on the server.
++    showToast("Joining isn't live yet. Coming soon!", "warning");
++  };
++
++  const lockedRow = (label, value, placeholder) => (
++    <View style={styles.field}>
++      <Text style={styles.label}>{label}</Text>
++      <View style={[styles.box, styles.lockedBox]}>
++        <Text style={[styles.lockedText, !value && styles.placeholder]} numberOfLines={1}>
++          {value || (loading ? "Loading…" : placeholder)}
++        </Text>
++        <Ionicons name="lock-closed" size={moderateScale(15)} color={Colors.textMuted} />
++      </View>
++    </View>
++  );
++
++  return (
++    // Full-page Persian-blue gradient with orange glows, like the card.
++    <LinearGradient
++      colors={[VU.blueLight, VU.blue, VU.blueDeep]}
++      start={{ x: 0, y: 0 }}
++      end={{ x: 1, y: 1 }}
++      style={styles.root}
++    >
++      <StatusBar barStyle="light-content" backgroundColor={VU.blue} />
++      <View pointerEvents="none" style={styles.glowTop} />
++      <View pointerEvents="none" style={styles.glowBottom} />
++
++      <SafeAreaView style={styles.safe}>
++        <View style={styles.header}>
++          <TouchableOpacity
++            onPress={goBack}
++            style={styles.headerBtn}
++            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
++            accessibilityRole="button"
++            accessibilityLabel="Go back"
++          >
++            <Ionicons name="arrow-back" size={moderateScale(20)} color={VU.white} />
++          </TouchableOpacity>
++          <Text style={styles.headerTitle}>VU Trading Competition</Text>
++          <View style={styles.headerBtn} />
++        </View>
++
++        <ScrollView
++          contentContainerStyle={styles.content}
++          showsVerticalScrollIndicator={false}
++          keyboardShouldPersistTaps="handled"
++        >
++          {/* hero */}
++          <View style={styles.hero}>
++            <CompetitionScene paused={reduceMotion} />
++            <Text style={styles.heroTitle} accessibilityRole="header">
++              VU Trading{"\n"}Competition
++            </Text>
++          </View>
++
++          {/* ── 1. Your details ───────────────────────────────────────────── */}
++          <View style={styles.card}>
++            <Text style={styles.cardTitle}>Your details</Text>
++
++            {lockedRow("Name", fullName, "—")}
++            {lockedRow("Username", username ? `@${username}` : "", "Not set yet")}
++            {lockedRow("Email", email, "—")}
++
++            {/* Division dropdown */}
++            <View style={styles.field}>
++              <Text style={styles.label}>Division</Text>
++              <TouchableOpacity
++                activeOpacity={0.85}
++                onPress={() => setOpen((v) => !v)}
++                style={[styles.box, styles.select, open && styles.selectOpen, divisionError && styles.selectError]}
++                accessibilityRole="button"
++                accessibilityState={{ expanded: open }}
++                accessibilityLabel={selected ? `Division, ${selected.label} selected` : "Select your division"}
++              >
++                <Text style={[styles.selectText, !selected && styles.placeholder]}>
++                  {selected ? selected.label : "Select your division"}
++                </Text>
++                <Ionicons
++                  name={open ? "chevron-up" : "chevron-down"}
++                  size={moderateScale(18)}
++                  color={VU.blue}
++                />
++              </TouchableOpacity>
++
++              {open ? (
++                <View style={styles.menu}>
++                  {DIVISIONS.map((d, i) => {
++                    const active = d.key === division;
++                    return (
++                      <TouchableOpacity
++                        key={d.key}
++                        activeOpacity={0.7}
++                        onPress={() => {
++                          setDivision(d.key);
++                          setOpen(false);
++                        }}
++                        style={[styles.option, i > 0 && styles.optionDivider, active && styles.optionActive]}
++                        accessibilityRole="menuitem"
++                        accessibilityState={{ selected: active }}
++                      >
++                        <Text style={[styles.optionText, active && styles.optionTextActive]}>{d.label}</Text>
++                        {active ? <Ionicons name="checkmark-circle" size={moderateScale(20)} color={VU.orange} /> : null}
++                      </TouchableOpacity>
++                    );
++                  })}
++                </View>
++              ) : null}
++
++              {divisionError ? <Text style={styles.errorText}>Please select your division.</Text> : null}
++            </View>
++
++            <TouchableOpacity
++              activeOpacity={0.9}
++              onPress={handleJoin}
++              style={[styles.joinBtn, !division && styles.joinBtnIdle]}
++              accessibilityRole="button"
++              accessibilityLabel="Join competition"
++            >
++              <Text style={styles.joinText}>Join competition</Text>
++              <Ionicons name="arrow-forward" size={moderateScale(18)} color={VU.white} />
++            </TouchableOpacity>
++          </View>
++
++          {/* ── 2. Overview ───────────────────────────────────────────────── */}
++          <View style={styles.card}>
++            <Text style={styles.cardTitle}>Overview</Text>
++            <Text style={styles.body}>{OVERVIEW.text}</Text>
++
++            <View style={styles.factsRow}>
++              {OVERVIEW.facts.map((f) => (
++                <View key={f.label} style={styles.fact}>
++                  <Ionicons name={f.icon} size={moderateScale(18)} color={VU.orange} />
++                  <Text style={styles.factValue} numberOfLines={1} adjustsFontSizeToFit>
++                    {f.value}
++                  </Text>
++                  <Text style={styles.factLabel}>{f.label}</Text>
++                </View>
++              ))}
++            </View>
++
++            {OVERVIEW.steps.map((step, i) => (
++              <View key={step.title} style={styles.step}>
++                <View style={styles.stepNum}>
++                  <Text style={styles.stepNumText}>{i + 1}</Text>
++                </View>
++                <View style={styles.stepBody}>
++                  <Text style={styles.stepTitle}>{step.title}</Text>
++                  <Text style={styles.stepText}>{step.body}</Text>
++                </View>
++              </View>
++            ))}
++
++            <Text style={styles.note}>{OVERVIEW.note}</Text>
++          </View>
++
++          {/* ── 3. Rules ──────────────────────────────────────────────────── */}
++          <View style={styles.card}>
++            <Text style={styles.cardTitle}>Competition rules</Text>
++
++            {RULES.map((section, si) => (
++              <View key={section.title} style={[styles.ruleSection, si > 0 && styles.ruleSectionGap]}>
++                <View style={styles.ruleHead}>
++                  <View style={styles.ruleIcon}>
++                    <Ionicons name={section.icon} size={moderateScale(15)} color={VU.white} />
++                  </View>
++                  <Text style={styles.ruleTitle}>{section.title}</Text>
++                </View>
++                {section.items.map((text) => (
++                  <View key={text} style={styles.ruleItem}>
++                    <View style={styles.bullet} />
++                    <Text style={styles.ruleText}>{text}</Text>
++                  </View>
++                ))}
++              </View>
++            ))}
++          </View>
++        </ScrollView>
++      </SafeAreaView>
++    </LinearGradient>
++  );
++};
++
++const styles = StyleSheet.create({
++  root: { flex: 1 },
++  safe: { flex: 1, backgroundColor: "transparent" },
++
++  // orange glows, like the accent on the card
++  glowTop: {
++    position: "absolute",
++    right: -moderateScale(90),
++    top: -moderateScale(80),
++    width: moderateScale(280),
++    height: moderateScale(280),
++    borderRadius: moderateScale(140),
++    backgroundColor: VU.orange,
++    opacity: 0.22,
++  },
++  glowBottom: {
++    position: "absolute",
++    left: -moderateScale(120),
++    bottom: -moderateScale(100),
++    width: moderateScale(300),
++    height: moderateScale(300),
++    borderRadius: moderateScale(150),
++    backgroundColor: VU.orange,
++    opacity: 0.14,
++  },
++
++  header: {
++    flexDirection: "row",
++    alignItems: "center",
++    justifyContent: "space-between",
++    paddingHorizontal: moderateScale(20),
++    paddingVertical: moderateScale(14),
++  },
++  headerBtn: {
++    width: moderateScale(36),
++    height: moderateScale(36),
++    borderRadius: moderateScale(18),
++    justifyContent: "center",
++    alignItems: "center",
++  },
++  headerTitle: {
++    color: VU.white,
++    fontSize: fontScale(17),
++    fontWeight: "700",
++  },
++  content: {
++    paddingHorizontal: moderateScale(20),
++    paddingBottom: moderateScale(40),
++  },
++
++  hero: { alignItems: "center", marginBottom: moderateScale(8) },
++  heroTitle: {
++    color: VU.white,
++    fontSize: fontScale(26),
++    lineHeight: fontScale(31),
++    fontWeight: "800",
++    letterSpacing: -0.5,
++    textAlign: "center",
++    marginTop: moderateScale(4),
++  },
++
++  // white cards on the blue page
++  card: {
++    backgroundColor: VU.white,
++    borderRadius: 24,
++    padding: moderateScale(20),
++    marginTop: moderateScale(16),
++    ...Shadows.card,
++  },
++  cardTitle: {
++    color: Colors.text,
++    fontSize: fontScale(18),
++    fontWeight: "800",
++    letterSpacing: -0.3,
++    marginBottom: moderateScale(14),
++  },
++  body: {
++    color: Colors.textSecondary,
++    fontSize: fontScale(14),
++    lineHeight: fontScale(21),
++  },
++
++  // form fields
++  field: { marginBottom: moderateScale(14) },
++  label: {
++    color: Colors.textSecondary,
++    fontSize: fontScale(12),
++    fontWeight: "600",
++    marginBottom: moderateScale(6),
++  },
++  box: {
++    minHeight: moderateScale(48),
++    borderRadius: 14,
++    borderWidth: 1,
++    borderColor: Colors.border,
++    paddingHorizontal: moderateScale(14),
++    flexDirection: "row",
++    alignItems: "center",
++    justifyContent: "space-between",
++  },
++  lockedBox: { backgroundColor: Colors.background },
++  lockedText: {
++    flex: 1,
++    color: Colors.text,
++    fontSize: fontScale(15),
++    fontWeight: "500",
++    marginRight: moderateScale(8),
++  },
++  placeholder: { color: Colors.textMuted },
++  select: { backgroundColor: VU.white, borderColor: VU.blue },
++  selectOpen: { borderWidth: 2 },
++  selectError: { borderColor: Colors.danger },
++  selectText: { color: Colors.text, fontSize: fontScale(15), fontWeight: "600" },
++  menu: {
++    marginTop: moderateScale(8),
++    borderRadius: 14,
++    borderWidth: 1,
++    borderColor: Colors.border,
++    backgroundColor: VU.white,
++    overflow: "hidden",
++  },
++  option: {
++    minHeight: moderateScale(46),
++    paddingHorizontal: moderateScale(14),
++    flexDirection: "row",
++    alignItems: "center",
++    justifyContent: "space-between",
++  },
++  optionDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
++  optionActive: { backgroundColor: "#FFF3E8" },
++  optionText: { color: Colors.text, fontSize: fontScale(15), fontWeight: "500" },
++  optionTextActive: { color: VU.orangeDeep, fontWeight: "700" },
++  errorText: {
++    color: Colors.danger,
++    fontSize: fontScale(12),
++    marginTop: moderateScale(6),
++  },
++  joinBtn: {
++    height: moderateScale(50),
++    borderRadius: 25,
++    backgroundColor: VU.orange,
++    flexDirection: "row",
++    alignItems: "center",
++    justifyContent: "center",
++    marginTop: moderateScale(4),
++  },
++  joinBtnIdle: { opacity: 0.55 },
++  joinText: {
++    color: VU.white,
++    fontSize: fontScale(15),
++    fontWeight: "700",
++    marginRight: moderateScale(8),
++  },
++
++  // overview
++  factsRow: {
++    flexDirection: "row",
++    justifyContent: "space-between",
++    marginTop: moderateScale(16),
++    marginBottom: moderateScale(8),
++  },
++  fact: {
++    flex: 1,
++    alignItems: "center",
++    backgroundColor: "#FFF3E8",
++    borderRadius: 16,
++    paddingVertical: moderateScale(12),
++    paddingHorizontal: moderateScale(6),
++    marginHorizontal: moderateScale(4),
++  },
++  factValue: {
++    color: VU.blueDeep,
++    fontSize: fontScale(15),
++    fontWeight: "800",
++    marginTop: moderateScale(6),
++  },
++  factLabel: {
++    color: Colors.textSecondary,
++    fontSize: fontScale(11),
++    marginTop: moderateScale(2),
++    textAlign: "center",
++  },
++  step: {
++    flexDirection: "row",
++    alignItems: "center",
++    marginTop: moderateScale(12),
++  },
++  stepNum: {
++    width: moderateScale(28),
++    height: moderateScale(28),
++    borderRadius: moderateScale(14),
++    backgroundColor: VU.blue,
++    alignItems: "center",
++    justifyContent: "center",
++    marginRight: moderateScale(12),
++  },
++  stepNumText: { color: VU.white, fontSize: fontScale(13), fontWeight: "700" },
++  stepBody: { flex: 1 },
++  stepTitle: { color: Colors.text, fontSize: fontScale(14), fontWeight: "700" },
++  stepText: { color: Colors.textSecondary, fontSize: fontScale(12), marginTop: 1 },
++  note: {
++    color: VU.orangeDeep,
++    fontSize: fontScale(12),
++    fontWeight: "600",
++    marginTop: moderateScale(16),
++  },
++
++  // rules
++  ruleSection: {},
++  ruleSectionGap: { marginTop: moderateScale(20) },
++  ruleHead: { flexDirection: "row", alignItems: "center", marginBottom: moderateScale(8) },
++  ruleIcon: {
++    width: moderateScale(26),
++    height: moderateScale(26),
++    borderRadius: moderateScale(8),
++    backgroundColor: VU.orange,
++    alignItems: "center",
++    justifyContent: "center",
++    marginRight: moderateScale(10),
++  },
++  ruleTitle: { color: VU.blueDeep, fontSize: fontScale(15), fontWeight: "800" },
++  ruleItem: { flexDirection: "row", marginTop: moderateScale(8) },
++  bullet: {
++    width: moderateScale(6),
++    height: moderateScale(6),
++    borderRadius: moderateScale(3),
++    backgroundColor: VU.blue,
++    marginTop: moderateScale(8),
++    marginRight: moderateScale(10),
++  },
++  ruleText: {
++    flex: 1,
++    color: Colors.textSecondary,
++    fontSize: fontScale(13.5),
++    lineHeight: fontScale(20),
++  },
++});
++
++export default VuCompetitionPage;
 -- 
 2.43.0
 

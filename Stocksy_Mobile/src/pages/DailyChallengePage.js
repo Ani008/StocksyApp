@@ -1,5 +1,12 @@
 import React, { useRef, useState } from "react";
-import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -89,7 +96,11 @@ const DailyChallengePage = ({ navigation }) => {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={moderateScale(20)} color={Colors.text} />
+          <Ionicons
+            name="arrow-back"
+            size={moderateScale(20)}
+            color={Colors.text}
+          />
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Daily Challenge</Text>
@@ -114,11 +125,11 @@ const DailyChallengePage = ({ navigation }) => {
         {tab === "challenge" ? (
           <>
             {/* VU Trading Competition banner (UI only for now: stage 2 wires it up) */}
-            <VuCompetitionCard
-              style={styles.vuCard}
-              onPress={comingSoon("VU Trading Competition")}
+
+            <NiftyPredictionCard
+              niftyLtp={niftyLtp}
+              niftyChange={niftyChange}
             />
-            <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
             <View style={styles.widgetRow}>
               <DailyQuizCard onPress={comingSoon("Daily Quiz")} />
               <StockOfTheDayCard onPress={openFaceOff} />
@@ -127,6 +138,10 @@ const DailyChallengePage = ({ navigation }) => {
               style={styles.challengeCard}
               onPress={comingSoon("Challenge a Friend")}
               onChallenge={comingSoon("Challenge a Friend")}
+            />
+            <VuCompetitionCard
+              style={styles.vuCard}
+              onPress={comingSoon("VU Trading Competition")}
             />
           </>
         ) : (
@@ -175,7 +190,7 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(16),
   },
   challengeCard: { marginTop: moderateScale(16) },
-  vuCard: { marginBottom: moderateScale(16) },
+  vuCard: { marginTop: moderateScale(16) },
 });
 
 export default DailyChallengePage;
