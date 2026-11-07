@@ -1,12 +1,24 @@
-import React, { useEffect, useState } from "react";
-import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { CompetitionScene, useReduceMotion } from "../components/VuCompetitionCard";
+import CompetitionCountdown from "../components/CompetitionCountdown";
 import { getMyProfile } from "../../services/profileService";
+import { getCompetitionStatus, joinCompetition } from "../../services/competitionService";
+import { apiErrorMessage } from "../utils/profileSetup";
 import { showToast } from "../../services/uiBridge";
 import { DIVISIONS, OVERVIEW, RULES, VU } from "../constants/vuCompetition";
 import { Colors, Shadows, fontScale, moderateScale } from "../theme";
@@ -14,13 +26,14 @@ import { Colors, Shadows, fontScale, moderateScale } from "../theme";
 /**
  * VU Trading Competition page (opened from the card on Daily Challenge).
  *
- * Frontend only for now (stage 2):
- *   - the student's name, username and email are filled in from the account
- *     (locked: they identify the account, so this page never edits them)
- *   - a Division dropdown, A to G
- *   - the competition overview and rules
- * Joining is not wired to a server yet (stage 3), so "Join competition" only
- * checks that a division is picked and then tells the person it is coming.
+ * The student's name, username and email are filled in from the account (locked:
+ * they identify the account, and the server takes them from the login, never from
+ * this form), a Division dropdown, then the overview and rules.
+ *
+ * "Join competition" saves the division on the server. Once saved, the form is
+ * replaced by a "You're registered" box with a countdown to the contest start.
+ * Whether joining is open, the countdown date and the division list all come from
+ * the server (GET /api/competition/me), so they can change without an app release.
  */
 const VuCompetitionPage = ({ navigation }) => {
   const reduceMotion = useReduceMotion();
@@ -30,9 +43,42 @@ const VuCompetitionPage = ({ navigation }) => {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
 
-  const [division, setDivision] = useState(null); // a DIVISIONS key, or null
+  const [division, setDivision] = useState(null); // a division key, or null
   const [open, setOpen] = useState(false);
   const [triedJoin, setTriedJoin] = useState(false);
+
+  // From the server: { visible, registrationOpen, startsAt, divisions, entry }.
+  const [status, setStatus] = useState(null);
+  const [statusFailed, setStatusFailed] = useState(false);
+  const [offsetMs, setOffsetMs] = useState(0); // server clock minus phone clock
+  const [refreshing, setRefreshing] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const joiningRef = useRef(false); // ignores a second tap while the first is saving
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const s = await getCompetitionStatus();
+      const serverMs = Date.parse(s.serverTime);
+      if (!Number.isNaN(serverMs)) setOffsetMs(serverMs - Date.now());
+      setStatus(s);
+      setStatusFailed(false);
+    } catch {
+      setStatusFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadStatus();
+    setRefreshing(false);
+  };
+
+  const divisions = status?.divisions?.length ? status.divisions : DIVISIONS;
+  const entry = status?.entry || null;
 
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -70,17 +116,43 @@ const VuCompetitionPage = ({ navigation }) => {
     };
   }, []);
 
-  const selected = DIVISIONS.find((d) => d.key === division);
+  const selected = divisions.find((d) => d.key === division);
   const divisionError = triedJoin && !division;
 
-  const handleJoin = () => {
+  const closedNotice = (() => {
+    if (!status || status.registrationOpen) return "";
+    const started = status.startsAt && Date.parse(status.startsAt) <= Date.now() + offsetMs;
+    return started ? "Registration has closed. The contest has started." : "Registration isn't open right now.";
+  })();
+
+  const handleJoin = async () => {
     setTriedJoin(true);
+    if (!status) return;
+    if (!status.registrationOpen) {
+      showToast(closedNotice, "warning");
+      return;
+    }
     if (!division) {
       showToast("Please select your division first", "warning");
       return;
     }
-    // Stage 3 will create the entry and the contest wallet on the server.
-    showToast("Joining isn't live yet. Coming soon!", "warning");
+    if (joiningRef.current) return;
+    joiningRef.current = true;
+    setJoining(true);
+    try {
+      const { entry: saved } = await joinCompetition(division);
+      setStatus((s) => ({ ...s, entry: saved }));
+      setOpen(false);
+      showToast(`You're in! Division ${saved.division}`, "success");
+    } catch (err) {
+      showToast(apiErrorMessage(err, "Couldn't save your division. Please try again."), "error");
+      const code = err?.response?.data?.code;
+      // Someone else's change (joined on another device, or registration just closed): show the truth.
+      if (code === "ALREADY_JOINED" || code === "REGISTRATION_CLOSED") loadStatus();
+    } finally {
+      joiningRef.current = false;
+      setJoining(false);
+    }
   };
 
   const lockedRow = (label, value, placeholder) => (
@@ -126,6 +198,9 @@ const VuCompetitionPage = ({ navigation }) => {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VU.white} colors={[VU.orange]} />
+          }
         >
           {/* hero */}
           <View style={styles.hero}>
@@ -135,7 +210,48 @@ const VuCompetitionPage = ({ navigation }) => {
             </Text>
           </View>
 
-          {/* ── 1. Your details ───────────────────────────────────────────── */}
+          {/* ── 1. Registration: details form, or the "registered" box with the countdown ── */}
+          {entry ? (
+            <View style={styles.card}>
+              <View style={styles.regHead}>
+                <View style={styles.regCheck}>
+                  <Ionicons name="checkmark" size={moderateScale(20)} color={VU.white} />
+                </View>
+                <View style={styles.regHeadText}>
+                  <Text style={styles.cardTitleTight}>You're registered</Text>
+                  <Text style={styles.regSub} numberOfLines={1}>
+                    {fullName || "Student"}
+                    {username ? `  ·  @${username}` : ""}
+                  </Text>
+                </View>
+                <View style={styles.divChip}>
+                  <Text style={styles.divChipText}>Div {entry.division}</Text>
+                </View>
+              </View>
+              <CompetitionCountdown startsAt={status.startsAt} offsetMs={offsetMs} />
+              <Text style={styles.regNote}>
+                Your contest wallet and trading unlock when the contest starts. Keep the app handy!
+              </Text>
+            </View>
+          ) : statusFailed && !status ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Couldn't load the competition</Text>
+              <Text style={styles.body}>Check your connection and try again.</Text>
+              <TouchableOpacity
+                onPress={loadStatus}
+                style={[styles.joinBtn, styles.retryBtn]}
+                accessibilityRole="button"
+                accessibilityLabel="Try again"
+              >
+                <Text style={styles.joinText}>Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : status && !status.visible ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Not available right now</Text>
+              <Text style={styles.body}>The VU Trading Competition isn't open at the moment. Check back soon.</Text>
+            </View>
+          ) : (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Your details</Text>
 
@@ -166,7 +282,7 @@ const VuCompetitionPage = ({ navigation }) => {
 
               {open ? (
                 <View style={styles.menu}>
-                  {DIVISIONS.map((d, i) => {
+                  {divisions.map((d, i) => {
                     const active = d.key === division;
                     return (
                       <TouchableOpacity
@@ -191,17 +307,27 @@ const VuCompetitionPage = ({ navigation }) => {
               {divisionError ? <Text style={styles.errorText}>Please select your division.</Text> : null}
             </View>
 
+            {closedNotice ? <Text style={styles.closedText}>{closedNotice}</Text> : null}
+
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={handleJoin}
-              style={[styles.joinBtn, !division && styles.joinBtnIdle]}
+              disabled={joining}
+              style={[styles.joinBtn, (!division || !status?.registrationOpen) && styles.joinBtnIdle]}
               accessibilityRole="button"
               accessibilityLabel="Join competition"
             >
-              <Text style={styles.joinText}>Join competition</Text>
-              <Ionicons name="arrow-forward" size={moderateScale(18)} color={VU.white} />
+              {joining ? (
+                <ActivityIndicator color={VU.white} />
+              ) : (
+                <>
+                  <Text style={styles.joinText}>Join competition</Text>
+                  <Ionicons name="arrow-forward" size={moderateScale(18)} color={VU.white} />
+                </>
+              )}
             </TouchableOpacity>
           </View>
+          )}
 
           {/* ── 2. Overview ───────────────────────────────────────────────── */}
           <View style={styles.card}>
@@ -409,6 +535,47 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(4),
   },
   joinBtnIdle: { opacity: 0.55 },
+  retryBtn: { marginTop: moderateScale(16) },
+  closedText: {
+    color: VU.orangeDeep,
+    fontSize: fontScale(12.5),
+    fontWeight: "600",
+    marginBottom: moderateScale(10),
+  },
+
+  // registered box
+  regHead: { flexDirection: "row", alignItems: "center" },
+  regCheck: {
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
+    backgroundColor: VU.orange,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: moderateScale(12),
+  },
+  regHeadText: { flex: 1, marginRight: moderateScale(8) },
+  cardTitleTight: {
+    color: Colors.text,
+    fontSize: fontScale(18),
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  regSub: { color: Colors.textSecondary, fontSize: fontScale(12.5), marginTop: 2 },
+  divChip: {
+    backgroundColor: "#FFF3E8",
+    borderRadius: 12,
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: moderateScale(6),
+  },
+  divChipText: { color: VU.orangeDeep, fontSize: fontScale(13), fontWeight: "800" },
+  regNote: {
+    color: Colors.textSecondary,
+    fontSize: fontScale(12.5),
+    lineHeight: fontScale(18),
+    textAlign: "center",
+    marginTop: moderateScale(14),
+  },
   joinText: {
     color: VU.white,
     fontSize: fontScale(15),

@@ -47,6 +47,23 @@ class IdempotencyConflictError extends Error {
     this.name = 'IdempotencyConflictError';
   }
 }
+class CompetitionClosedError extends Error {
+  // The competition (or its registration) is switched off or over. `code` lets the
+  // app show the right message instead of parsing English.
+  constructor(message, code = 'COMPETITION_CLOSED') {
+    super(message);
+    this.name = 'CompetitionClosedError';
+    this.code = code;
+  }
+}
+class FeatureUnavailableError extends Error {
+  // The switches could not be read (database down). Competition actions fail
+  // CLOSED: nothing is allowed until the switches can be read again.
+  constructor(message) {
+    super(message || 'This is unavailable right now. Please try again shortly.');
+    this.name = 'FeatureUnavailableError';
+  }
+}
 class SessionExpiredError extends Error {
   constructor() { super('Your session has expired'); this.name = 'SessionExpiredError'; }
 }
@@ -90,6 +107,12 @@ function mapErrorToResponse(err) {
   if (err instanceof ConflictError)
     return { status: 409, body: { message: err.message, code: err.code, severity: 'error' } };
 
+  if (err instanceof CompetitionClosedError)
+    return { status: 403, body: { message: err.message, code: err.code, severity: 'warning' } };
+
+  if (err instanceof FeatureUnavailableError)
+    return { status: 503, body: { message: err.message, code: 'FEATURE_UNAVAILABLE', severity: 'error' } };
+
   if (err instanceof UnauthorizedError)
     return { status: 401, body: { message: err.message, code: 'UNAUTHORIZED', severity: 'error' } };
 
@@ -123,6 +146,8 @@ module.exports = {
   NotFoundError,
   UnauthorizedError,
   ConflictError,
+  CompetitionClosedError,
+  FeatureUnavailableError,
   SessionExpiredError,
   IdempotencyConflictError,
   mapErrorToResponse,

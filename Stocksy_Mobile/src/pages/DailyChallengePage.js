@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import {
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -17,6 +18,7 @@ import StockOfTheDayCard from "../components/StockOfTheDayCard";
 import ChallengeFriendCard from "../components/ChallengeFriendCard";
 import VuCompetitionCard from "../components/VuCompetitionCard";
 import useMarketData from "../hooks/useMarketData";
+import useAppFeatures from "../hooks/useAppFeatures";
 import { StreakContent } from "./StreakPage";
 import { hasSeenFaceOffIntro } from "../utils/faceOffIntro";
 import { showToast } from "../../services/uiBridge";
@@ -47,6 +49,16 @@ const calcChange = (ltp, cp) => {
  */
 const DailyChallengePage = ({ navigation }) => {
   const [tab, setTab] = useState("challenge");
+
+  // Remote switches: the VU card only shows when the server says so. Checked on
+  // launch, on returning to the app and on pull-to-refresh (no app release needed).
+  const { features, refresh } = useAppFeatures();
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refresh({ force: true });
+    setRefreshing(false);
+  };
 
   // Live Nifty 50, from the shared market socket (same key the Dashboard uses).
   const { prices } = useMarketData();
@@ -121,6 +133,7 @@ const DailyChallengePage = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {tab === "challenge" ? (
           <>
@@ -134,10 +147,12 @@ const DailyChallengePage = ({ navigation }) => {
               onChallenge={comingSoon("Challenge a Friend")}
             />
             {/* VU Trading Competition banner: opens the overview, rules and join page */}
-            <VuCompetitionCard
-              style={styles.vuCard}
-              onPress={() => navigation.navigate("VuCompetition")}
-            />
+            {features.competition_visible ? (
+              <VuCompetitionCard
+                style={styles.vuCard}
+                onPress={() => navigation.navigate("VuCompetition")}
+              />
+            ) : null}
           </>
         ) : (
           <StreakContent />

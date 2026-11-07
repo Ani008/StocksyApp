@@ -145,6 +145,16 @@ const leaderboardLimiter = rateLimit({
   store: makeRedisStore('rl:leaderboard:'),
 });
 
+// Competition status + join. Per USER, not per IP: a whole classroom shares one
+// campus WiFi address, so a per-IP limit would block students who did nothing wrong.
+const competitionLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 1000, // 1 min
+  max: 30,
+  keyGenerator: perUserKey,
+  store: makeRedisStore('rl:competition:'),
+});
+
 // "Is this username free?" — used on the signup screen, BEFORE login, so this
 // one can only count per IP. Generous because the app checks as you type.
 const usernameCheckLimiter = rateLimit({
@@ -163,5 +173,6 @@ module.exports = {
   userSearchLimiter,
   profileLimiter,
   leaderboardLimiter,
+  competitionLimiter,
   usernameCheckLimiter,
 };

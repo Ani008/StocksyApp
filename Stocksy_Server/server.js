@@ -103,6 +103,8 @@ app.use("/api/predictions", require("./routes/predictions"));
 app.use("/api/streak", require("./routes/streak"));
 app.use("/api/stock-of-the-day", require("./routes/stockOfTheDay"));
 app.use("/api/app", require("./routes/appVersion"));   // <-- add this
+app.use("/api/config", require("./routes/config"));           // remote feature switches (public)
+app.use("/api/competition", require("./routes/competition")); // VU Trading Competition
 
 // ─── Health check — hit this first from the app to confirm connectivity ───────
 // From the app: fetch('http://<YOUR_LAN_IP>:5000/health').then(r => r.text()).then(console.log)
