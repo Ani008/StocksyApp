@@ -8,6 +8,7 @@ import NiftyPredictionCard from "../components/NiftyPredictionCard";
 import DailyQuizCard from "../components/DailyQuizCard";
 import StockOfTheDayCard from "../components/StockOfTheDayCard";
 import ChallengeFriendCard from "../components/ChallengeFriendCard";
+import VuCompetitionCard from "../components/VuCompetitionCard";
 import useMarketData from "../hooks/useMarketData";
 import { StreakContent } from "./StreakPage";
 import { hasSeenFaceOffIntro } from "../utils/faceOffIntro";
@@ -112,6 +113,11 @@ const DailyChallengePage = ({ navigation }) => {
       >
         {tab === "challenge" ? (
           <>
+            {/* VU Trading Competition banner (UI only for now: stage 2 wires it up) */}
+            <VuCompetitionCard
+              style={styles.vuCard}
+              onPress={comingSoon("VU Trading Competition")}
+            />
             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
             <View style={styles.widgetRow}>
               <DailyQuizCard onPress={comingSoon("Daily Quiz")} />
@@ -169,6 +175,7 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(16),
   },
   challengeCard: { marginTop: moderateScale(16) },
+  vuCard: { marginBottom: moderateScale(16) },
 });
 
 export default DailyChallengePage;
