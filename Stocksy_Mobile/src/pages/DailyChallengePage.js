@@ -124,11 +124,10 @@ const DailyChallengePage = ({ navigation }) => {
       >
         {tab === "challenge" ? (
           <>
-            {/* VU Trading Competition banner (UI only for now: stage 2 wires it up) */}
-
-            <NiftyPredictionCard
-              niftyLtp={niftyLtp}
-              niftyChange={niftyChange}
+            {/* VU Trading Competition banner: opens the overview, rules and join page */}
+            <VuCompetitionCard
+              style={styles.vuCard}
+              onPress={() => navigation.navigate("VuCompetition")}
             />
             <View style={styles.widgetRow}>
               <DailyQuizCard onPress={comingSoon("Daily Quiz")} />

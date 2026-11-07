@@ -71,6 +71,7 @@ import AlertsPage from "./src/pages/AlertsPage";
 import WatchlistPage from "./src/pages/WatchlistPage";
 import StreakPage from "./src/pages/StreakPage";
 import DailyChallengePage from "./src/pages/DailyChallengePage";
+import VuCompetitionPage from "./src/pages/VuCompetitionPage";
 import LeaderboardPage from "./src/pages/LeaderboardPage";
 import FollowListPage from "./src/pages/FollowListPage";
 import EditProfilePage from "./src/pages/EditProfilePage";
@@ -343,6 +344,7 @@ function AppContent() {
               name="DailyChallenge"
               component={DailyChallengePage}
             />
+            <Stack.Screen name="VuCompetition" component={VuCompetitionPage} />
             <Stack.Screen name="StockOfTheDay" component={StockOfTheDayPage} />
             <Stack.Screen
               name="StockFaceOffIntro"

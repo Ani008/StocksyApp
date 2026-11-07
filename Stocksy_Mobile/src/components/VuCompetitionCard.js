@@ -15,21 +15,22 @@ import Svg, {
 import { Ionicons } from "@expo/vector-icons";
 
 import { Shadows, fontScale, moderateScale } from "../theme";
+import { VU } from "../constants/vuCompetition";
 
-// ── VU college colours: Persian blue, orange and white ───────────────────────
-const PERSIAN_BLUE = "#1C39BB";
-const PERSIAN_BLUE_DEEP = "#12238A";
-const PERSIAN_BLUE_LIGHT = "#3A5BE0";
-const ORANGE = "#F97316";
-const ORANGE_LIGHT = "#FDBA74";
-const ORANGE_DEEP = "#EA580C";
-const WHITE = "#FFFFFF";
+// ── VU college colours: Persian blue, orange and white (shared with the page) ──
+const PERSIAN_BLUE = VU.blue;
+const PERSIAN_BLUE_DEEP = VU.blueDeep;
+const PERSIAN_BLUE_LIGHT = VU.blueLight;
+const ORANGE = VU.orange;
+const ORANGE_LIGHT = VU.orangeLight;
+const ORANGE_DEEP = VU.orangeDeep;
+const WHITE = VU.white;
 
 // The native animation driver doesn't exist on web.
 const NATIVE = Platform.OS !== "web";
 
 /** Honour the device's "reduce motion" setting: everything then stays still. */
-function useReduceMotion() {
+export function useReduceMotion() {
   const [reduce, setReduce] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -166,7 +167,7 @@ function Sparkle({ left, top, size, loop, paused }) {
  * Scene on the left of the card: a trophy flanked by two candlesticks, all
  * floating, tilting and "breathing" on their own rhythm, with a soft glow behind.
  */
-function CompetitionScene({ paused }) {
+export function CompetitionScene({ paused }) {
   const s = moderateScale;
   const trophy = useLoop(3200, 0, paused);
   const candleA = useLoop(2700, 400, paused);
