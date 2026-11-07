@@ -19,12 +19,15 @@ const HANDLE = `CASE WHEN u.username_set THEN u.username END`;
 //            would let points creeping up on the board give the answers away.
 //   nifty    Nifty calls settled as WON
 //   streak   days the user checked in
-//   ranked   points added up, then numbered 1..n: most points first, ties go to
-//            whoever joined first, then by id so the order never flickers
+//   scored   points added up for everyone on the board
+//   ranked   ONLY people with at least 1 point, numbered 1..n: most points first,
+//            ties go to whoever joined first, then by id so the order never
+//            flickers. Someone with 0 points is not ranked at all — a board of
+//            brand-new users is EMPTY, not a list of everyone tied on 0.
 //
-// The response is every row with rank <= limit PLUS the viewer's own row, so
-// someone at rank 340 still sees "you are 340th". `total` is the size of the
-// whole table. Weights come in as query parameters from leaderboardLogic.POINTS.
+// The response is every row with rank <= limit PLUS the viewer's own row (only
+// if they have points), so someone at rank 340 still sees "you are 340th".
+// `total` is the number of ranked people, i.e. those with points. Weights come in as query parameters from leaderboardLogic.POINTS.
 //
 //   $1 viewer id   $2 friends-only?   $3 limit
 //   $4 points per streak day   $5 per correct Stock of the Day round   $6 per Nifty win
@@ -74,28 +77,32 @@ const getLeaderboard = async ({ viewerId, scope, limit }) => {
       WHERE c.user_id IN (SELECT id FROM scoped)
       GROUP BY c.user_id
     ),
-    ranked AS (
+    scored AS (
       SELECT s.id,
              s.full_name,
              s.handle,
              s.avatar,
              s.avatar_id,
+             s.created_at,
              COALESCE(streak.days, 0)   * $4::int
                + COALESCE(sotd.correct, 0) * $5::int
-               + COALESCE(nifty.wins, 0)   * $6::int AS points,
-             ROW_NUMBER() OVER (
-               ORDER BY
-                 COALESCE(streak.days, 0)   * $4::int
-                   + COALESCE(sotd.correct, 0) * $5::int
-                   + COALESCE(nifty.wins, 0)   * $6::int DESC,
-                 s.created_at ASC,
-                 s.id ASC
-             ) AS rank,
-             COUNT(*) OVER () AS total
+               + COALESCE(nifty.wins, 0)   * $6::int AS points
       FROM scoped s
       LEFT JOIN sotd   ON sotd.user_id   = s.id
       LEFT JOIN nifty  ON nifty.user_id  = s.id
       LEFT JOIN streak ON streak.user_id = s.id
+    ),
+    ranked AS (
+      SELECT sc.id,
+             sc.full_name,
+             sc.handle,
+             sc.avatar,
+             sc.avatar_id,
+             sc.points,
+             ROW_NUMBER() OVER (ORDER BY sc.points DESC, sc.created_at ASC, sc.id ASC) AS rank,
+             COUNT(*) OVER () AS total
+      FROM scored sc
+      WHERE sc.points > 0
     )
     SELECT id, full_name, handle, avatar, avatar_id, points::int AS points,
            rank::int AS rank, total::int AS total

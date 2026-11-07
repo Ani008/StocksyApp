@@ -60,9 +60,14 @@ export const splitBoard = (entries) => ({
 export const pinnedMe = (board) =>
   board?.me && !board.entries.some((e) => e.id === board.me.id) ? board.me : null;
 
-// The friends board is just you: nobody followed yet.
+// The friends board is just you: you are ranked and nobody else is (nobody
+// followed, or the people you follow have no points yet).
 export const isFriendsAlone = (tab, board) =>
-  tab === "friends" && (board?.total ?? 0) <= 1;
+  tab === "friends" && Boolean(board?.me) && (board?.total ?? 0) <= 1;
+
+// There are ranked people but you are not one of them: you have no points yet.
+export const isUnranked = (board) =>
+  Boolean(board) && board.entries.length > 0 && !board.me;
 
 // "Your rank" line under the list: "#340 of 1,204".
 export const rankSummary = (me, total) => {
@@ -74,15 +79,19 @@ export const rankSummary = (me, total) => {
 // What the page says when there is nothing to rank besides you.
 export const FRIENDS_ALONE = {
   title: "Follow friends to compete",
-  message: "Your friends board is just you for now. Follow people to see how you rank against them.",
+  message: "No friends are on your board yet. Follow people, or ask friends to start playing, to see how you rank.",
   action: "Find people",
 };
 
-// What the page says when the board has no rows at all.
+// What the page says when nobody has any points. Only people with at least one
+// point are ranked, so a brand-new app shows this instead of a list tied on 0.
 export const NOBODY = {
-  title: "Nobody on the board yet",
-  message: "Play today's Stock of the Day or make a Nifty call to get on it.",
+  title: "No one on the leaderboard yet",
+  message: "Points come from daily check-ins, Stock of the Day and correct Nifty calls. Score one to be first.",
 };
+
+// Shown under the list when others are ranked but you have no points yet.
+export const NOT_RANKED = "You're not on the board yet. Earn your first point to get ranked.";
 
 // What the page says when the board could not be loaded.
 export const LOAD_ERROR = {

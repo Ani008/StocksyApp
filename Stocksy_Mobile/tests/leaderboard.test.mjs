@@ -9,7 +9,10 @@ import {
   splitBoard,
   pinnedMe,
   isFriendsAlone,
+  isUnranked,
   rankSummary,
+  NOBODY,
+  NOT_RANKED,
 } from "../src/utils/leaderboard.js";
 
 const raw = (over = {}) => ({
@@ -122,12 +125,30 @@ test("your row is pinned only when you are not already in the list", () => {
   assert.equal(pinnedMe(null), null);
 });
 
-test("the friends board with nobody followed is detected, the global board never is", () => {
-  assert.equal(isFriendsAlone("friends", { total: 1 }), true);
-  assert.equal(isFriendsAlone("friends", { total: 0 }), true);
-  assert.equal(isFriendsAlone("friends", { total: 2 }), false);
-  assert.equal(isFriendsAlone("global", { total: 1 }), false);
-  assert.equal(isFriendsAlone("friends", null), true);
+test("the friends board is 'just you' only when you are ranked and nobody else is", () => {
+  const me = toBoardEntry(raw({ id: "me", isSelf: true }));
+  assert.equal(isFriendsAlone("friends", { me, total: 1 }), true);
+  assert.equal(isFriendsAlone("friends", { me, total: 2 }), false);
+  assert.equal(isFriendsAlone("global", { me, total: 1 }), false);
+  // a friend has points but you do not: that is not "just you"
+  assert.equal(isFriendsAlone("friends", { me: null, total: 1 }), false);
+  assert.equal(isFriendsAlone("friends", null), false);
+});
+
+test("you are 'unranked' when others have points and you do not", () => {
+  const other = toBoardEntry(raw({ id: "friend" }));
+  const me = toBoardEntry(raw({ id: "me", isSelf: true }));
+  assert.equal(isUnranked({ entries: [other], me: null, total: 1 }), true);
+  assert.equal(isUnranked({ entries: [other, me], me, total: 2 }), false);
+  assert.equal(isUnranked({ entries: [], me: null, total: 0 }), false); // empty board is its own state
+  assert.equal(isUnranked(null), false);
+});
+
+test("an empty server response normalizes to an empty board (the 'no one yet' state)", () => {
+  const board = normalizeBoard({ scope: "global", total: 0, entries: [], me: null });
+  assert.deepEqual(board, { entries: [], me: null, total: 0 });
+  assert.match(NOBODY.title, /No one on the leaderboard/);
+  assert.ok(NOT_RANKED.length > 0);
 });
 
 test("rankSummary reads '#rank of total'", () => {

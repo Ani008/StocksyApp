@@ -278,8 +278,7 @@ test('Nifty calls that are LOST, VOID or still PENDING earn nothing', { skip }, 
   await niftyCall(me, '2026-04-01', 'LOST');
   await niftyCall(me, '2026-04-02', 'VOID');
   await niftyCall(me, '2026-04-03', 'PENDING');
-  const mine = (await board(me, 'global')).find((r) => r.id === me);
-  assert.equal(mine.points, 0);
+  assert.ok(!ids(await board(me, 'global')).includes(me)); // 0 points → not ranked
 });
 
 test('a half-played Stock of the Day earns nothing yet (points must not leak the answers)', { skip }, async () => {
@@ -287,7 +286,7 @@ test('a half-played Stock of the Day earns nothing yet (points must not leak the
   await makeDay('2026-05-01', 3);
   await answer(me, '2026-05-01', 0, 'w0'); // correct, but the day is not finished
   await answer(me, '2026-05-01', 1, 'w1'); // correct, but the day is not finished
-  assert.equal((await board(me, 'global')).find((r) => r.id === me).points, 0);
+  assert.ok(!ids(await board(me, 'global')).includes(me)); // 0 points → not ranked
 
   await answer(me, '2026-05-01', 2, 'nope'); // day finished: 2 of 3 right
   assert.equal((await board(me, 'global')).find((r) => r.id === me).points, 2 * L.POINTS.STOCK_OF_THE_DAY);
@@ -334,8 +333,9 @@ test('friends = you + the people you follow, ranked against each other', { skip 
   assert.equal(rows[0].total, 2);
 });
 
-test('friends with nobody followed is just you at rank 1', { skip }, async () => {
+test('friends with nobody followed is just you at rank 1 (once you have points)', { skip }, async () => {
   const me = await makeUser();
+  await checkIns(me, 1);
   const rows = await board(me, 'friends');
   assert.deepEqual(rows.map((r) => [r.id, r.rank, r.total]), [[me, 1, 1]]);
 });
@@ -343,6 +343,7 @@ test('friends with nobody followed is just you at rank 1', { skip }, async () =>
 test('unfollowing takes someone off your friends board straight away', { skip }, async () => {
   const me = await makeUser();
   const friend = await makeUser();
+  await checkIns(friend, 1);
   await follow(me, friend);
   assert.ok(ids(await board(me, 'friends')).includes(friend));
   await pool.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [me, friend]);
@@ -350,7 +351,8 @@ test('unfollowing takes someone off your friends board straight away', { skip },
 });
 
 test('your own row comes back with your real rank even when you are below the cut', { skip }, async () => {
-  const me = await makeUser(); // 0 points → joined before the others below
+  const me = await makeUser();
+  await checkIns(me, 1); // 5 points: fewer than the others below
   const others = [];
   for (let i = 0; i < 4; i += 1) {
     const u = await makeUser();
@@ -375,6 +377,8 @@ test('your own row comes back with your real rank even when you are below the cu
 test('handle is the chosen username, and null until one is chosen', { skip }, async () => {
   const chosen = await makeUser();
   const notYet = await makeUser({ usernameSet: false });
+  await checkIns(chosen, 1);
+  await checkIns(notYet, 1);
   const rows = await board(chosen, 'global');
   const a = rows.find((r) => r.id === chosen);
   const b = rows.find((r) => r.id === notYet);
@@ -385,6 +389,7 @@ test('handle is the chosen username, and null until one is chosen', { skip }, as
 
 test('the avatar the person picked is returned', { skip }, async () => {
   const me = await makeUser({ avatarId: 'female_3' });
+  await checkIns(me, 1);
   assert.equal((await board(me, 'global')).find((r) => r.id === me).avatar_id, 'female_3');
 });
 
@@ -413,6 +418,7 @@ const call = async (user, query) => {
 
 test('handler: defaults to the friends board and returns the documented shape', { skip }, async () => {
   const me = await makeUser();
+  await checkIns(me, 1);
   const res = await call(me, {});
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.scope, 'friends');
@@ -451,6 +457,7 @@ test('GET /api/leaderboard needs a login', { skip }, async () => {
 test('GET /api/leaderboard?scope=global ranks people and marks you', { skip }, async () => {
   const me = await makeUser();
   const rival = await makeUser();
+  await checkIns(me, 1);
   await checkIns(rival, 200); // far ahead of anyone else in this schema (earlier tests top out at 50)
   await follow(me, rival);
 
@@ -473,4 +480,60 @@ test('GET /api/leaderboard: a bad scope is a 400 over HTTP too', { skip }, async
   const res = await get(me, '?scope=everyone');
   assert.equal(res.status, 400);
   assert.equal(res.body.code, 'VALIDATION_ERROR');
+});
+
+// ── nobody has points yet ───────────────────────────────────────────────────
+
+test('people with 0 points are not ranked: a board of brand-new users is empty', { skip }, async () => {
+  const me = await makeUser();
+  const a = await makeUser();
+  const b = await makeUser();
+  await follow(me, a);
+  await follow(me, b);
+
+  const friends = await board(me, 'friends');
+  assert.deepEqual(friends, []);
+
+  // Global may hold people from earlier tests, but none of THESE users.
+  const global = await board(me, 'global');
+  for (const id of [me, a, b]) assert.ok(!ids(global).includes(id));
+});
+
+test('the first person to score is rank 1 and the only one on the board', { skip }, async () => {
+  const me = await makeUser();
+  const a = await makeUser();
+  const b = await makeUser();
+  await follow(me, a);
+  await follow(me, b);
+  await checkIns(a, 1);
+
+  const rows = await board(me, 'friends');
+  assert.deepEqual(rows.map((r) => [r.id, r.rank, r.total]), [[a, 1, 1]]);
+});
+
+test('you have 0 points but a friend does: you are not on the board, they are', { skip }, async () => {
+  const me = await makeUser();
+  const friend = await makeUser();
+  await follow(me, friend);
+  await checkIns(friend, 2);
+
+  const res = L.buildResponse('friends', await board(me, 'friends'), 50, me);
+  assert.deepEqual(res.entries.map((e) => e.id), [friend]);
+  assert.equal(res.me, null); // not ranked yet
+  assert.equal(res.total, 1);
+});
+
+test('handler: nobody has points → empty board, not an error', { skip }, async () => {
+  const me = await makeUser();
+  const res = await call(me, { scope: 'friends' });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { scope: 'friends', total: 0, entries: [], me: null });
+});
+
+test('earning a first point puts you on the board', { skip }, async () => {
+  const me = await makeUser();
+  assert.deepEqual(await board(me, 'friends'), []);
+  await checkIns(me, 1);
+  const rows = await board(me, 'friends');
+  assert.deepEqual(rows.map((r) => [r.id, r.rank, r.points]), [[me, 1, L.POINTS.STREAK_DAY]]);
 });

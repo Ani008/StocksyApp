@@ -23,7 +23,9 @@ import {
   LEADERBOARD_TABS,
   LOAD_ERROR,
   NOBODY,
+  NOT_RANKED,
   isFriendsAlone,
+  isUnranked,
   normalizeBoard,
   pinnedMe,
   rankSummary,
@@ -135,6 +137,7 @@ const LeaderboardPage = ({ navigation }) => {
   const { podium, rest } = splitBoard(board?.entries ?? []);
   const pinned = pinnedMe(board);
   const alone = status === "ready" && isFriendsAlone(tab, board);
+  const unranked = status === "ready" && isUnranked(board);
 
   const refreshControl = (
     <RefreshControl
@@ -228,6 +231,13 @@ const LeaderboardPage = ({ navigation }) => {
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
+
+          {/* Others are ranked but you have no points yet. */}
+          {unranked && (
+            <View style={styles.pinned}>
+              <Text style={styles.unrankedText}>{NOT_RANKED}</Text>
+            </View>
+          )}
 
           {/* Your own row when you rank below the rows loaded. */}
           {pinned && (
@@ -335,6 +345,13 @@ const styles = StyleSheet.create({
     marginBottom: moderateScale(8),
   },
   pinnedRow: { marginBottom: moderateScale(12) },
+  unrankedText: {
+    fontSize: fontScale(Typography.caption),
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    textAlign: "center",
+    paddingBottom: moderateScale(14),
+  },
   // Loading / error / nobody-yet: fills the space under the toggle.
   centerWrap: {
     flex: 1,
