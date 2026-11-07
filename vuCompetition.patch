@@ -1,0 +1,433 @@
+From fb925804de63d0b57e9dfe28e0cd9228ab5d4f90 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 7 Nov 2026 13:28:13 +0000
+Subject: [PATCH] Add VU Trading Competition card to Daily Challenge page
+ (frontend only)
+
+---
+ .../src/components/VuCompetitionCard.js       | 380 ++++++++++++++++++
+ .../src/pages/DailyChallengePage.js           |   7 +
+ 2 files changed, 387 insertions(+)
+ create mode 100644 Stocksy_Mobile/src/components/VuCompetitionCard.js
+
+diff --git a/Stocksy_Mobile/src/components/VuCompetitionCard.js b/Stocksy_Mobile/src/components/VuCompetitionCard.js
+new file mode 100644
+index 0000000..708d032
+--- /dev/null
++++ b/Stocksy_Mobile/src/components/VuCompetitionCard.js
+@@ -0,0 +1,380 @@
++import React, { useEffect, useRef, useState } from "react";
++import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
++import { LinearGradient } from "expo-linear-gradient";
++import Svg, {
++  Circle,
++  Defs,
++  Ellipse,
++  G,
++  Line,
++  LinearGradient as SvgGradient,
++  Path,
++  Rect,
++  Stop,
++} from "react-native-svg";
++import { Ionicons } from "@expo/vector-icons";
++
++import { Shadows, fontScale, moderateScale } from "../theme";
++
++// ── VU college colours: Persian blue, orange and white ───────────────────────
++const PERSIAN_BLUE = "#1C39BB";
++const PERSIAN_BLUE_DEEP = "#12238A";
++const PERSIAN_BLUE_LIGHT = "#3A5BE0";
++const ORANGE = "#F97316";
++const ORANGE_LIGHT = "#FDBA74";
++const ORANGE_DEEP = "#EA580C";
++const WHITE = "#FFFFFF";
++
++// The native animation driver doesn't exist on web.
++const NATIVE = Platform.OS !== "web";
++
++/** Honour the device's "reduce motion" setting: everything then stays still. */
++function useReduceMotion() {
++  const [reduce, setReduce] = useState(false);
++  useEffect(() => {
++    let alive = true;
++    AccessibilityInfo.isReduceMotionEnabled?.()
++      .then((v) => alive && setReduce(!!v))
++      .catch(() => {});
++    const sub = AccessibilityInfo.addEventListener?.("reduceMotionChanged", (v) => setReduce(!!v));
++    return () => {
++      alive = false;
++      sub?.remove?.();
++    };
++  }, []);
++  return reduce;
++}
++
++/** A 0 <-> 1 value that eases back and forth forever, offset by `delay` ms. */
++function useLoop(duration, delay, paused) {
++  const v = useRef(new Animated.Value(0.5)).current;
++  useEffect(() => {
++    if (paused) {
++      v.setValue(0.5);
++      return undefined;
++    }
++    const ease = Easing.inOut(Easing.sin);
++    const loop = Animated.loop(
++      Animated.sequence([
++        Animated.timing(v, { toValue: 1, duration, easing: ease, useNativeDriver: NATIVE }),
++        Animated.timing(v, { toValue: 0, duration, easing: ease, useNativeDriver: NATIVE }),
++      ]),
++    );
++    const t = setTimeout(() => loop.start(), delay);
++    return () => {
++      clearTimeout(t);
++      loop.stop();
++    };
++  }, [v, duration, delay, paused]);
++  return v;
++}
++
++// ── Artwork (react-native-svg, no image assets) ──────────────────────────────
++
++/** Trophy: orange cup with handles, white stem and base, and a star. viewBox 0 0 100 120 */
++function TrophyArt({ width, height }) {
++  return (
++    <Svg width={width} height={height} viewBox="0 0 100 120">
++      <Defs>
++        <SvgGradient id="vu-cup" x1="0" y1="0" x2="1" y2="1">
++          <Stop offset="0" stopColor={ORANGE_LIGHT} />
++          <Stop offset="0.5" stopColor={ORANGE} />
++          <Stop offset="1" stopColor={ORANGE_DEEP} />
++        </SvgGradient>
++        <SvgGradient id="vu-base" x1="0" y1="0" x2="0" y2="1">
++          <Stop offset="0" stopColor={WHITE} />
++          <Stop offset="1" stopColor="#DCE4FF" />
++        </SvgGradient>
++      </Defs>
++
++      {/* handles */}
++      <Path d="M24 20 H10 C10 38 18 48 32 50" fill="none" stroke={ORANGE_DEEP} strokeWidth="6" strokeLinecap="round" />
++      <Path d="M76 20 H90 C90 38 82 48 68 50" fill="none" stroke={ORANGE_DEEP} strokeWidth="6" strokeLinecap="round" />
++
++      {/* cup */}
++      <Path d="M22 10 H78 V38 C78 56 66 68 50 68 C34 68 22 56 22 38 Z" fill="url(#vu-cup)" />
++      {/* gloss */}
++      <Path d="M30 16 H36 V38 C36 48 40 55 46 59 C36 56 30 48 30 38 Z" fill={WHITE} fillOpacity="0.4" />
++      {/* star */}
++      <Path
++        d="M50 22 L53.6 31 L63 31.6 L55.8 37.6 L58.2 46.8 L50 41.6 L41.8 46.8 L44.2 37.6 L37 31.6 L46.4 31 Z"
++        fill={WHITE}
++      />
++
++      {/* stem + base */}
++      <Rect x="44" y="66" width="12" height="20" fill="url(#vu-base)" />
++      <Rect x="32" y="84" width="36" height="9" rx="3" fill={ORANGE_DEEP} />
++      <Rect x="24" y="92" width="52" height="13" rx="4" fill="url(#vu-base)" />
++      <Rect x="40" y="96" width="20" height="5" rx="2.5" fill={PERSIAN_BLUE} fillOpacity="0.85" />
++    </Svg>
++  );
++}
++
++/** One candlestick: wick + glossy body. Drawn in its own small viewBox 0 0 30 `h`. */
++function CandleArt({ width, height, body, wickTop, wickBottom, color }) {
++  const vbH = wickTop + body + wickBottom;
++  return (
++    <Svg width={width} height={height} viewBox={`0 0 30 ${vbH}`}>
++      <Defs>
++        <SvgGradient id={`vu-c-${color}`} x1="0" y1="0" x2="1" y2="1">
++          {color === "white" ? (
++            <>
++              <Stop offset="0" stopColor={WHITE} />
++              <Stop offset="1" stopColor="#C7D2FE" />
++            </>
++          ) : (
++            <>
++              <Stop offset="0" stopColor={ORANGE_LIGHT} />
++              <Stop offset="0.5" stopColor={ORANGE} />
++              <Stop offset="1" stopColor={ORANGE_DEEP} />
++            </>
++          )}
++        </SvgGradient>
++      </Defs>
++      <Line
++        x1="15"
++        y1="0"
++        x2="15"
++        y2={vbH}
++        stroke={color === "white" ? WHITE : ORANGE_DEEP}
++        strokeWidth="3"
++        strokeLinecap="round"
++      />
++      <Rect x="3" y={wickTop} width="24" height={body} rx="6" fill={`url(#vu-c-${color})`} />
++      <Rect x="7" y={wickTop + 4} width="4" height={body * 0.55} rx="2" fill={WHITE} fillOpacity="0.5" />
++    </Svg>
++  );
++}
++
++/** Four-point sparkle that twinkles. */
++function Sparkle({ left, top, size, loop, paused }) {
++  const opacity = loop.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] });
++  const scale = loop.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.15] });
++  return (
++    <Animated.View
++      pointerEvents="none"
++      style={{ position: "absolute", left, top, opacity: paused ? 0.8 : opacity, transform: [{ scale }] }}
++    >
++      <Svg width={size} height={size} viewBox="0 0 24 24">
++        <Path d="M12 0 L14.6 9.4 L24 12 L14.6 14.6 L12 24 L9.4 14.6 L0 12 L9.4 9.4 Z" fill={WHITE} />
++      </Svg>
++    </Animated.View>
++  );
++}
++
++/**
++ * Scene on the left of the card: a trophy flanked by two candlesticks, all
++ * floating, tilting and "breathing" on their own rhythm, with a soft glow behind.
++ */
++function CompetitionScene({ paused }) {
++  const s = moderateScale;
++  const trophy = useLoop(3200, 0, paused);
++  const candleA = useLoop(2700, 400, paused);
++  const candleB = useLoop(3000, 900, paused);
++  const glow = useLoop(2600, 0, paused);
++  const twinkleA = useLoop(1500, 0, paused);
++  const twinkleB = useLoop(1900, 600, paused);
++
++  const float = (v, by) => v.interpolate({ inputRange: [0, 1], outputRange: [by, -by] });
++  const tilt = (v, base, d) =>
++    v.interpolate({ inputRange: [0, 1], outputRange: [`${base - d}deg`, `${base + d}deg`] });
++
++  const glowOpacity = glow.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
++  const glowScale = glow.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.12] });
++  const trophyScale = trophy.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] });
++
++  return (
++    <View
++      pointerEvents="none"
++      accessibilityElementsHidden
++      importantForAccessibility="no-hide-descendants"
++      style={styles.scene}
++    >
++      {/* breathing glow */}
++      <Animated.View style={[styles.glowWrap, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]}>
++        {[1, 0.8, 0.6, 0.4].map((r, i) => (
++          <View
++            key={i}
++            style={{
++              position: "absolute",
++              width: s(120) * r,
++              height: s(120) * r,
++              left: -(s(120) * r) / 2,
++              top: -(s(120) * r) / 2,
++              borderRadius: (s(120) * r) / 2,
++              backgroundColor: i < 2 ? ORANGE : WHITE,
++              opacity: i < 2 ? 0.1 : 0.1,
++            }}
++          />
++        ))}
++      </Animated.View>
++
++      {/* candle behind-left (white) */}
++      <Animated.View
++        style={[
++          styles.abs,
++          { left: s(4), top: s(46) },
++          { transform: [{ translateY: float(candleA, s(6)) }, { rotate: tilt(candleA, -9, 3) }] },
++        ]}
++      >
++        <CandleArt width={s(28)} height={s(78)} body={40} wickTop={14} wickBottom={18} color="white" />
++      </Animated.View>
++
++      {/* candle behind-right (orange) */}
++      <Animated.View
++        style={[
++          styles.abs,
++          { left: s(104), top: s(30) },
++          { transform: [{ translateY: float(candleB, s(7)) }, { rotate: tilt(candleB, 9, 3) }] },
++        ]}
++      >
++        <CandleArt width={s(30)} height={s(92)} body={50} wickTop={16} wickBottom={20} color="orange" />
++      </Animated.View>
++
++      {/* trophy in front, centred */}
++      <Animated.View
++        style={[
++          styles.abs,
++          { left: s(32), top: s(18) },
++          { transform: [{ translateY: float(trophy, s(6)) }, { scale: trophyScale }] },
++        ]}
++      >
++        <TrophyArt width={s(76)} height={s(92)} />
++      </Animated.View>
++
++      <Sparkle left={s(10)} top={s(10)} size={s(14)} loop={twinkleA} paused={paused} />
++      <Sparkle left={s(118)} top={s(8)} size={s(10)} loop={twinkleB} paused={paused} />
++      <Sparkle left={s(100)} top={s(110)} size={s(9)} loop={twinkleA} paused={paused} />
++    </View>
++  );
++}
++
++/**
++ * VuCompetitionCard — the "VU Trading Competition" promo banner.
++ *
++ * Persian-blue gradient card (VU's college colours: Persian blue, orange and
++ * white) with a floating trophy + candlesticks on the left, the title on the
++ * right and a "Learn more" button underneath. UI only for now: `onPress`
++ * is optional and nothing happens unless you pass one.
++ *
++ * Props:
++ *   title        string    — default "VU Trading\nCompetition"
++ *   buttonLabel  string    — default "Learn more"
++ *   onPress      function  — called when the card or the button is tapped (optional)
++ *   style        object    — merged onto the outer container
++ */
++export default function VuCompetitionCard({
++  title = "VU Trading\nCompetition",
++  buttonLabel = "Learn more",
++  onPress,
++  style,
++}) {
++  const reduce = useReduceMotion();
++  const Wrapper = onPress ? TouchableOpacity : View;
++  const wrapperProps = onPress
++    ? { onPress, activeOpacity: 0.92, accessibilityRole: "button", accessibilityLabel: `${title.replace("\n", " ")}. ${buttonLabel}` }
++    : {};
++
++  return (
++    // The outer view holds the shadow: the gradient clips its children.
++    <Wrapper {...wrapperProps} style={[styles.shadow, style]}>
++      <LinearGradient
++        colors={[PERSIAN_BLUE_LIGHT, PERSIAN_BLUE, PERSIAN_BLUE_DEEP]}
++        start={{ x: 0, y: 0 }}
++        end={{ x: 1, y: 1 }}
++        style={styles.card}
++      >
++        {/* soft orange accent glow in the corner */}
++        <View pointerEvents="none" style={styles.accentGlow} />
++
++        <CompetitionScene paused={reduce} />
++
++        <View style={styles.right}>
++          <Text style={styles.title} accessibilityRole="header">
++            {title}
++          </Text>
++
++          <View style={styles.learnRow}>
++            <Text style={styles.learnText}>{buttonLabel}</Text>
++            <View style={styles.arrowBtn}>
++              <Ionicons name="arrow-up" size={moderateScale(15)} color={PERSIAN_BLUE} style={styles.arrowIcon} />
++            </View>
++          </View>
++        </View>
++      </LinearGradient>
++    </Wrapper>
++  );
++}
++
++const styles = StyleSheet.create({
++  shadow: {
++    borderRadius: 24,
++    backgroundColor: PERSIAN_BLUE,
++    ...Shadows.card,
++  },
++  card: {
++    borderRadius: 24,
++    minHeight: moderateScale(170),
++    flexDirection: "row",
++    alignItems: "stretch",
++    paddingVertical: moderateScale(20),
++    paddingLeft: moderateScale(8),
++    paddingRight: moderateScale(20),
++    overflow: "hidden",
++  },
++  accentGlow: {
++    position: "absolute",
++    right: -moderateScale(50),
++    top: -moderateScale(60),
++    width: moderateScale(170),
++    height: moderateScale(170),
++    borderRadius: moderateScale(85),
++    backgroundColor: ORANGE,
++    opacity: 0.22,
++  },
++  scene: {
++    width: moderateScale(140),
++    alignSelf: "center",
++    height: moderateScale(130),
++  },
++  abs: { position: "absolute" },
++  glowWrap: {
++    position: "absolute",
++    left: moderateScale(70),
++    top: moderateScale(66),
++  },
++  right: {
++    flex: 1,
++    alignItems: "flex-end",
++    justifyContent: "space-between",
++  },
++  title: {
++    color: WHITE,
++    fontSize: fontScale(22),
++    lineHeight: fontScale(27),
++    fontWeight: "800",
++    letterSpacing: -0.4,
++    textAlign: "right",
++  },
++  learnRow: {
++    flexDirection: "row",
++    alignItems: "center",
++    marginTop: moderateScale(16),
++  },
++  learnText: {
++    color: WHITE,
++    fontSize: fontScale(14),
++    fontWeight: "500",
++    marginRight: moderateScale(10),
++  },
++  arrowBtn: {
++    width: moderateScale(34),
++    height: moderateScale(34),
++    borderRadius: moderateScale(17),
++    backgroundColor: WHITE,
++    alignItems: "center",
++    justifyContent: "center",
++  },
++  // turns the up arrow into the "open" arrow (↗) from the reference
++  arrowIcon: { transform: [{ rotate: "45deg" }] },
++});
+diff --git a/Stocksy_Mobile/src/pages/DailyChallengePage.js b/Stocksy_Mobile/src/pages/DailyChallengePage.js
+index 3b81115..7e36538 100644
+--- a/Stocksy_Mobile/src/pages/DailyChallengePage.js
++++ b/Stocksy_Mobile/src/pages/DailyChallengePage.js
+@@ -8,6 +8,7 @@ import NiftyPredictionCard from "../components/NiftyPredictionCard";
+ import DailyQuizCard from "../components/DailyQuizCard";
+ import StockOfTheDayCard from "../components/StockOfTheDayCard";
+ import ChallengeFriendCard from "../components/ChallengeFriendCard";
++import VuCompetitionCard from "../components/VuCompetitionCard";
+ import useMarketData from "../hooks/useMarketData";
+ import { StreakContent } from "./StreakPage";
+ import { hasSeenFaceOffIntro } from "../utils/faceOffIntro";
+@@ -112,6 +113,11 @@ const DailyChallengePage = ({ navigation }) => {
+       >
+         {tab === "challenge" ? (
+           <>
++            {/* VU Trading Competition banner (UI only for now: stage 2 wires it up) */}
++            <VuCompetitionCard
++              style={styles.vuCard}
++              onPress={comingSoon("VU Trading Competition")}
++            />
+             <NiftyPredictionCard niftyLtp={niftyLtp} niftyChange={niftyChange} />
+             <View style={styles.widgetRow}>
+               <DailyQuizCard onPress={comingSoon("Daily Quiz")} />
+@@ -169,6 +175,7 @@ const styles = StyleSheet.create({
+     marginTop: moderateScale(16),
+   },
+   challengeCard: { marginTop: moderateScale(16) },
++  vuCard: { marginBottom: moderateScale(16) },
+ });
+ 
+ export default DailyChallengePage;
+-- 
+2.43.0
+

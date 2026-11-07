@@ -363,7 +363,7 @@ const DashboardPage = ({ navigation }) => {
               color="white"
               style={{ marginTop: moderateScale(2) }}
             >
-              {firstNameOf(user?.fullName) || "Trader"}
+              Hi, {firstNameOf(user?.fullName) || "Trader"}
             </AppText>
           </View>
           <TouchableOpacity
