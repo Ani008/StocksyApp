@@ -124,11 +124,6 @@ const DailyChallengePage = ({ navigation }) => {
       >
         {tab === "challenge" ? (
           <>
-            {/* VU Trading Competition banner: opens the overview, rules and join page */}
-            <VuCompetitionCard
-              style={styles.vuCard}
-              onPress={() => navigation.navigate("VuCompetition")}
-            />
             <View style={styles.widgetRow}>
               <DailyQuizCard onPress={comingSoon("Daily Quiz")} />
               <StockOfTheDayCard onPress={openFaceOff} />
@@ -138,9 +133,10 @@ const DailyChallengePage = ({ navigation }) => {
               onPress={comingSoon("Challenge a Friend")}
               onChallenge={comingSoon("Challenge a Friend")}
             />
+            {/* VU Trading Competition banner: opens the overview, rules and join page */}
             <VuCompetitionCard
               style={styles.vuCard}
-              onPress={comingSoon("VU Trading Competition")}
+              onPress={() => navigation.navigate("VuCompetition")}
             />
           </>
         ) : (
